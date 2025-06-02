@@ -7,11 +7,19 @@ import sys, os, json, pathlib, requests, tqdm
 from bs4 import BeautifulSoup
 
 ROOT = pathlib.Path(sys.argv[1]).expanduser()
-POSTS = ROOT / "posts-json"
+POSTS_JSON = ROOT / "posts-json"
+POSTS_DIR = ROOT / "posts"
 IMG_DIR = ROOT / "images"
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
-for jf in tqdm.tqdm(list(POSTS.glob("*.json")), desc="scanning posts"):
+# Recursively find all post.json files in posts/ and all .json in posts-json/
+def find_post_jsons():
+    for jf in POSTS_JSON.glob("*.json"):
+        yield jf
+    for jf in POSTS_DIR.rglob("post.json"):
+        yield jf
+
+for jf in tqdm.tqdm(list(find_post_jsons()), desc="scanning posts"):
     data = json.loads(jf.read_text())
     # Use post.body if body_html is not present
     body_html = data.get("body_html")

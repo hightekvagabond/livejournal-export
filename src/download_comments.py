@@ -143,7 +143,9 @@ def download_comments(cookies, headers):
                                 r.raise_for_status()
                                 with open(icon_path, "wb") as icf:
                                     icf.write(r.content)
-                            except Exception:
+                                print(f"Downloaded icon for user {posterid}: {icon_path}")
+                            except Exception as e:
+                                print(f"Failed to download icon for user {posterid} from {url}: {e}")
                                 pass
                         comment["icon_path"] = icon_path
                     else:
