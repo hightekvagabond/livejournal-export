@@ -64,8 +64,7 @@ def xml_to_json(xml):
     }
 
 def download_posts(cookies, headers):
-    os.makedirs('posts-xml', exist_ok=True)
-    os.makedirs('posts-json', exist_ok=True)
+    os.makedirs('batch-downloads/posts-xml', exist_ok=True)
 
     xml_posts = []
     month_cursor = start_month
@@ -77,14 +76,12 @@ def download_posts(cookies, headers):
         xml = fetch_month_posts(year, month, cookies, headers)
         xml_posts.extend(list(ET.fromstring(xml).iter('entry')))
 
-        with open('posts-xml/{0}-{1:02d}.xml'.format(year, month), 'w+', encoding='utf-8') as file:
+        with open(f'batch-downloads/posts-xml/{year}-{month:02d}.xml', 'w+', encoding='utf-8') as file:
             file.write(xml)
         
         month_cursor = month_cursor + relativedelta(months=1)  
 
     json_posts = list(map(xml_to_json, xml_posts))
-    with open('posts-json/all.json', 'w', encoding='utf-8') as f:
-        f.write(json.dumps(json_posts, ensure_ascii=False, indent=2))
 
     return json_posts
 
