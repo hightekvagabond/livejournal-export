@@ -3,6 +3,8 @@
 # Place at repo root (livejournal-export/run_backup.sh)
 # chmod +x run_backup.sh
 
+# NOTE: This script is the main entry point for Docker-based backups. It expects all code to be in src/.
+
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

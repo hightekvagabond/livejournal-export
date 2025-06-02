@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
+# All code is commented for clarity for junior developers.
+
 import os
 import json
 import requests
@@ -18,11 +21,10 @@ def fetch_xml(params, cookies, headers):
 
 def get_users_map(xml):
     users = {}
-
+    os.makedirs('batch-downloads/comments-json', exist_ok=True)  # Ensure directory exists
     for user in xml.iter('usermap'):
         users[user.attrib['id']] = user.attrib['user']
-
-    with open('comments-json/usermap.json', 'w', encoding='utf-8') as f:
+    with open('batch-downloads/comments-json/usermap.json', 'w', encoding='utf-8') as f:
         f.write(json.dumps(users, ensure_ascii=False, indent=2))
 
     return users

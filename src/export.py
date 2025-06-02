@@ -19,13 +19,16 @@ Usage:
 Arguments:
   -u / --username  (required)
   -p / --password  (required)
-  -s / --start YYYY-MM   default 0000-01
-  -e / --end   YYYY-MM   default 9999-12
+  -s / --start YYYY-MM   default 1999-04
+  -e / --end   YYYY-MM   default <current year and month>
   -f / --format json|html|md  default json
   -d / --dest   output dir    default .
 
 See README.md for full details and sample output structure.
 """
+# NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
+# All code is commented for clarity for junior developers.
+
 import argparse, getpass, json, os, re, sys
 from datetime import datetime
 from operator import itemgetter
@@ -35,18 +38,22 @@ import html2text, requests
 from bs4 import BeautifulSoup
 from markdown import markdown
 
-from download_posts import download_posts
-from download_comments import download_comments
-from download_friend_groups import download_friend_groups
+from .download_posts import download_posts
+from .download_comments import download_comments
+from .download_friend_groups import download_friend_groups
 
 
 # ─────────────────── CLI / interactive ─────────────────────────────────── #
 def parse_cli():
+    from datetime import datetime
+    now = datetime.now()
+    default_start = "1999-04"
+    default_end = f"{now.year}-{now.month:02d}"
     p = argparse.ArgumentParser()
     p.add_argument("-u", "--username")
     p.add_argument("-p", "--password")
-    p.add_argument("-s", "--start", default="0000-01")
-    p.add_argument("-e", "--end",   default="9999-12")
+    p.add_argument("-s", "--start", default=default_start)
+    p.add_argument("-e", "--end",   default=default_end)
     p.add_argument("-f", "--format", default="json", choices=["json","html","md"])
     p.add_argument("-d", "--dest",   default=".")
     a = p.parse_args()
@@ -56,8 +63,12 @@ def parse_cli():
 
 
 def interactive():
-    start = input("Enter start month YYYY-MM (empty = all): ").strip() or "0000-01"
-    end   = input("Enter end month   YYYY-MM (empty = all): ").strip() or "9999-12"
+    from datetime import datetime
+    now = datetime.now()
+    default_start = "1999-04"
+    default_end = f"{now.year}-{now.month:02d}"
+    start = input(f"Enter start month YYYY-MM [default: {default_start}]: ").strip() or default_start
+    end   = input(f"Enter end month   YYYY-MM [default: {default_end}]: ").strip() or default_end
     user  = input("Enter LiveJournal Username: ").strip()
     pw    = getpass.getpass("Enter LiveJournal Password: ")
     return user, pw, start, end, "json", os.getcwd()

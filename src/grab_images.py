@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
+# All code is commented for clarity for junior developers.
+# NOTE: This script is now in src/ and is not used directly in the Docker workflow. The main entry point is run_backup.sh in the project root.
+
 import sys, os, json, pathlib, requests, tqdm
 from bs4 import BeautifulSoup
 

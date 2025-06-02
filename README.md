@@ -125,32 +125,35 @@ For 2-factor LJ accounts create an “app-password” under **Account → Passwo
 
 ```
 .
-├─ export.py               # main script (with argparse)
-├─ download_posts.py
-├─ download_comments.py
-├─ download_friend_groups.py
+├─ src/
+│   ├─ export.py                  # main script (with argparse)
+│   ├─ download_posts.py
+│   ├─ download_comments.py
+│   ├─ download_friend_groups.py
+│   ├─ grab_images.py
+│   └─ lj_full_backup.sh
 ├─ Refactoring.md
 ├─ README.md
-├─ run_backup.sh           # root-level helper
-├─ posts/                  # per-post folders (YYYY/MM/...) with post.json, media/, comments/
+├─ README_orig.md
+├─ run_backup.sh                  # root-level Docker entry point
+├─ posts/                         # per-post folders (YYYY/MM/...) with post.json, media/, comments/
 ├─ images/
-│   └─ icons/<userid>/     # user icons
+│   └─ icons/<userid>/            # user icons
 ├─ batch-downloads/
-│   ├─ posts-xml/          # monthly post XMLs
-│   ├─ comments-xml/       # comment XMLs
-│   ├─ posts-json/         # all.json, per-post JSONs
-│   └─ comments-json/      # all.json, per-comment JSONs
+│   ├─ posts-xml/                 # monthly post XMLs
+│   ├─ comments-xml/              # comment XMLs
+│   ├─ posts-json/                # all.json, per-post JSONs
+│   └─ comments-json/             # all.json, per-comment JSONs
 └─ docker/
     ├─ Dockerfile
     ├─ requirements.txt
     └─ scripts/
-        ├─ lj_full_backup.sh
-        └─ grab_images.py
+        └─ grab_images.py         # legacy location, not used in Docker anymore
 ```
 
-- All post and comment JSONs now include `post_url`, `comment_url`, and `icon_path` fields.
-- Media is saved per-post in `posts/.../media/`.
-- User icons are saved in `images/icons/<userid>/`.
+- All Python scripts are now in `src/`.
+- `run_backup.sh` is the main entry point for Docker-based workflows.
+- `src/lj_full_backup.sh` is called inside the container (not directly by users).
 - See `Refactoring.md` for migration details and workflow.
 
 ---

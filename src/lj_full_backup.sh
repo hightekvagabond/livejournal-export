@@ -2,6 +2,9 @@
 # lj_full_backup.sh – runs inside the container
 # Needs: LJ_USER  LJ_PASS   (exported by run_backup.sh)
 # Optional: DEST  (target dir, default /backup)
+# 
+# NOTE: This script is now in src/ and is not used directly in the Docker workflow. The main entry point is run_backup.sh in the project root.
+# All code is commented for clarity for junior developers.
 
 set -euo pipefail
 

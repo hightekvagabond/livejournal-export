@@ -12,6 +12,10 @@ Typical usage within the Docker container:
 A small CLI wrapper is included, so you can also run the file directly once
 cookies+headers are prepared by `export.py`.
 """
+
+# NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
+# All code is commented for clarity for junior developers.
+
 from __future__ import annotations
 
 import json
@@ -20,6 +24,8 @@ from typing import Dict, List
 
 import requests
 from xml.etree import ElementTree as ET
+
+from .download_posts import download_posts
 
 # ---------------------------------------------------------------------------
 # XML‑RPC helpers

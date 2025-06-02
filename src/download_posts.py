@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
+# All code is commented for clarity for junior developers.
+
 import json
 import os
 import requests

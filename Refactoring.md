@@ -186,6 +186,8 @@ ok, I've created a refactoring list in this file, I want you to create a new fea
 - [x] 10 — Update `export.py` docstring and root `README.md`
 - [x] 11 — Add clean-up of legacy paths after a successful run (clarified: not needed)
 - [ ] 12 — Manual QA + tag a release
+- [ ] 13 — Move all Python scripts and batch helpers into a src/ or tools/ directory
+- [ ] 14 — Rewrite README.md for clarity and new structure
 
 ---
 
