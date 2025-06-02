@@ -68,13 +68,26 @@ docker build -f docker/Dockerfile -t ljexport:$(git rev-parse --short=12 HEAD) .
 bash run_backup.sh -d /absolute/path/for/archive
 ```
 
+You can now use additional flags for testing and development:
+
+- `--start YYYY-MM` and `--end YYYY-MM` to limit the date range (e.g. only download a few months)
+- `--clear` to delete all contents of the destination folder before backup (useful for clean test runs)
+
+Example:
+
+```bash
+./run_backup.sh --dest /tmp/ljtest --start 2010-01 --end 2010-03 --clear
+```
+
+This will only download posts/comments from Jan–Mar 2010 and clear the output folder before starting.
+
 `run_backup.sh` will:
 
 1. read `LJ_USER` / `LJ_PASS` from `.env`, or fetch them from Bitwarden CLI,
    or prompt you;
 2. auto-build the image for the current commit if it doesn’t exist;
 3. bind-mount your chosen archive folder;
-4. execute `docker/scripts/lj_full_backup.sh` inside the container, which in
+4. execute `src/lj_full_backup.sh` inside the container, which in
    turn runs `export.py` and `grab_images.py`.
 
 Subsequent runs build a **new** image only when the commit hash changes.
@@ -134,7 +147,6 @@ For 2-factor LJ accounts create an “app-password” under **Account → Passwo
 │   └─ lj_full_backup.sh
 ├─ Refactoring.md
 ├─ README.md
-├─ README_orig.md
 ├─ run_backup.sh                  # root-level Docker entry point
 ├─ posts/                         # per-post folders (YYYY/MM/...) with post.json, media/, comments/
 ├─ images/
@@ -154,6 +166,7 @@ For 2-factor LJ accounts create an “app-password” under **Account → Passwo
 - All Python scripts are now in `src/`.
 - `run_backup.sh` is the main entry point for Docker-based workflows.
 - `src/lj_full_backup.sh` is called inside the container (not directly by users).
+- The legacy `README_orig.md` has been removed; all up-to-date usage is in this README.
 - See `Refactoring.md` for migration details and workflow.
 
 ---

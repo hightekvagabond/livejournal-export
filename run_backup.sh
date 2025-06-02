@@ -19,20 +19,29 @@ IMAGE_NAME="ljexport:${GIT_COMMIT}"
 # -----------------------------------------------------------------------------
 usage() {
   cat <<EOF
-Usage: $0 [--dest DIR]   or   $0 DIR
+Usage: $0 [--dest DIR] [--start YYYY-MM] [--end YYYY-MM] [--clear]   or   $0 DIR
 
 Options
-  -d, --dest DIR   Host directory where the archive will be written
-  -h, --help       Show this help and exit
+  -d, --dest DIR     Host directory where the archive will be written
+  -s, --start MONTH  Start month (YYYY-MM) for export (optional, overrides default)
+  -e, --end MONTH    End month (YYYY-MM) for export (optional, overrides default)
+  --clear            Delete all contents of the destination folder before backup (for testing)
+  -h, --help         Show this help and exit
 EOF
   exit 1
 }
 
 # 0. Parse CLI arguments ------------------------------------------------------
 BACKUP_DIR_CLI=""
+START_MONTH=""
+END_MONTH=""
+CLEAR_DEST=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -d|--dest) BACKUP_DIR_CLI="$2"; shift 2 ;;
+    -s|--start) START_MONTH="$2"; shift 2 ;;
+    -e|--end) END_MONTH="$2"; shift 2 ;;
+    --clear) CLEAR_DEST=1; shift ;;
     -h|--help) usage ;;
     --) shift; break ;;
     -*)
@@ -88,6 +97,12 @@ else
   read -rp "Local directory for backup [${DEFAULT_DIR}]: " BACKUP_DIR
   BACKUP_DIR="${BACKUP_DIR:-$DEFAULT_DIR}"
 fi
+
+if [[ $CLEAR_DEST -eq 1 ]]; then
+  echo "[TESTING] Clearing all contents of $BACKUP_DIR before backup..."
+  rm -rf "$BACKUP_DIR"/*
+fi
+
 mkdir -p "$BACKUP_DIR/posts-json" "$BACKUP_DIR/images"
 
 # 5. Build Docker image if tag is missing -----------------------------------
@@ -103,6 +118,8 @@ echo "Running backup – output will appear in $BACKUP_DIR"
 docker run --rm -it \
   -e LJ_USER="$LJ_USER" \
   -e LJ_PASS="$LJ_PASS" \
+  -e START_MONTH="$START_MONTH" \
+  -e END_MONTH="$END_MONTH" \
   -v "$SCRIPTS_DIR":/scripts:ro \
   -v "$BACKUP_DIR":/backup \
   "$IMAGE_NAME" \

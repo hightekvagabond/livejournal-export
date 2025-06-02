@@ -24,8 +24,8 @@ mkdir -p "$DEST/batch-downloads" "$DEST/images" "$DEST/posts"
 ########################################
 # 2. Date range (full history)
 ########################################
-START_MONTH=1999-01                  # earliest plausible LJ month
-END_MONTH=$(date -u +%Y-%m)          # current month (UTC)
+START_MONTH="${START_MONTH:-1999-01}" # earliest plausible LJ month
+END_MONTH="${END_MONTH:-$(date -u +%Y-%m)}"          # current month (UTC)
 
 ########################################
 # 3. Posts + comments + friend groups → JSON
