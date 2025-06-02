@@ -20,12 +20,17 @@ from __future__ import annotations
 
 import json
 import sys
+import os
 from typing import Dict, List
 
 import requests
 from xml.etree import ElementTree as ET
 
-from .download_posts import download_posts
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from download_posts import download_posts
+from download_comments import download_comments
+from download_friend_groups import download_friend_groups
 
 # ---------------------------------------------------------------------------
 # XML‑RPC helpers

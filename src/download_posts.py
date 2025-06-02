@@ -10,8 +10,11 @@ from sys import exit as sysexit
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+import sys
 
 DATE_FORMAT = '%Y-%m'
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     start_month = datetime.strptime(input("Enter start month in YYYY-MM format: "), DATE_FORMAT)

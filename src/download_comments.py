@@ -3,7 +3,10 @@
 # NOTE: This script is now located in src/ and is intended to be run as a module or via Docker.
 # All code is commented for clarity for junior developers.
 
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import json
 import requests
 import xml.etree.ElementTree as ET
