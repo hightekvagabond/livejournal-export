@@ -1,4 +1,3 @@
-
 ok, I've created a refactoring list in this file, I want you to create a new feature branch for this set of refactors, do them one at a time, then test them, after wards let push the feature branch in the current version and let me test it manually before you move to the next one. Once it is complete you can mark it in the refactor list as done, but do not delete the refactor list or anything from it until the whole thing is approved by me.
 
 ---
@@ -172,6 +171,25 @@ ok, I've created a refactoring list in this file, I want you to create a new fea
   3. Bump version in README and tag `v0.2.0`.
 
 ---
+
+## Refactor Checklist (v0.2.0)
+
+- [x] 1 — Create the new top-level folder layout
+- [x] 2 — Move monthly post XML files into `batch-downloads/posts-xml/`
+- [x] 3 — Move comment XML dumps into `batch-downloads/comments-xml/`
+- [x] 4 — Move the giant “all.json” summary files into `batch-downloads/posts-json/` and `batch-downloads/comments-json/`
+- [x] 5 — Introduce hierarchical post folders under `posts/`
+- [x] 6 — Add a `media/` subfolder inside every post directory
+- [x] 7 — Create per-comment folders under each post
+- [x] 8 — Download user icons once, store in `images/icons/<userid>/`
+- [x] 9 — Add URL metadata to each post and comment JSON
+- [x] 10 — Update `export.py` docstring and root `README.md`
+- [x] 11 — Add clean-up of legacy paths after a successful run (clarified: not needed)
+- [ ] 12 — Manual QA + tag a release
+
+---
+
+**Do not delete this file or checklist until the entire refactor is approved and released.**
 
 ### References & docs
 
