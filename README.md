@@ -15,7 +15,6 @@ isolated runs.
   python export.py -u USER -p APPPASS \
                    -s 1999-01 -e 2025-06 \
                    -f json     -d /path/out
-````
 
 * `--start/--end` default to the entire history (0000-01 → 9999-12),
   so only `-u/-p` are strictly required.
