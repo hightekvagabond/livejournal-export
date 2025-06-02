@@ -203,8 +203,9 @@ def comments_to_html(comments):
 def save_as_json(pid, post, cmts, out_fmt):
     if out_fmt != "json":
         return
-    Path("posts-json").mkdir(exist_ok=True)
-    with open(f"posts-json/{pid}.json", "w", encoding="utf-8") as f:
+    # Save to new batch-downloads/posts-json directory
+    Path("batch-downloads/posts-json").mkdir(exist_ok=True, parents=True)
+    with open(f"batch-downloads/posts-json/{pid}.json", "w", encoding="utf-8") as f:
         json.dump({"id": pid, "post": post, "comments": cmts}, f, ensure_ascii=False, indent=2)
 
 
