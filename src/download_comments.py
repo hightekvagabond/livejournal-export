@@ -48,8 +48,11 @@ def get_more_comments(start_id, users, cookies, headers):
     comments = []
     local_max_id = -1
 
+    # Ensure the directory exists before writing
+    os.makedirs('batch-downloads/comments-xml', exist_ok=True)
     xml = fetch_xml({'get': 'comment_body', 'startid': start_id}, cookies, headers)
-    with open('comments-xml/comment_body-{0}.xml'.format(start_id), 'w', encoding='utf-8') as f:
+    xml_path = f"batch-downloads/comments-xml/comment_body-{start_id}.xml"
+    with open(xml_path, 'w', encoding='utf-8') as f:
         f.write(xml)
 
     for comment_xml in ET.fromstring(xml).iter('comment'):
