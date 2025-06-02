@@ -10,7 +10,6 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="$PROJECT_ROOT/docker/Dockerfile"
 DOCKER_CONTEXT="$PROJECT_ROOT"
-SCRIPTS_DIR="$PROJECT_ROOT/docker/scripts"
 
 # Tag image with current Git commit hash
 GIT_COMMIT=$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD)
@@ -120,10 +119,9 @@ docker run --rm -it \
   -e LJ_PASS="$LJ_PASS" \
   -e START_MONTH="$START_MONTH" \
   -e END_MONTH="$END_MONTH" \
-  -v "$SCRIPTS_DIR":/scripts:ro \
   -v "$BACKUP_DIR":/backup \
   "$IMAGE_NAME" \
-  /scripts/lj_full_backup.sh
+  /opt/livejournal-export/src/lj_full_backup.sh
 
 echo "✔ Done! Archive saved in $BACKUP_DIR"
 
