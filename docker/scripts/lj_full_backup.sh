@@ -25,7 +25,7 @@ START_MONTH=1999-01                  # earliest plausible LJ month
 END_MONTH=$(date -u +%Y-%m)          # current month (UTC)
 
 ########################################
-# 3. Posts + comments → JSON
+# 3. Posts + comments + friend groups → JSON
 ########################################
 python /opt/livejournal-export/export.py \
   --username "$LJ_USER" \

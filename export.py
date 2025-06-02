@@ -37,6 +37,7 @@ from markdown import markdown
 
 from download_posts import download_posts
 from download_comments import download_comments
+from download_friend_groups import download_friend_groups
 
 
 # ─────────────────── CLI / interactive ─────────────────────────────────── #
@@ -111,6 +112,13 @@ def main():
                 if month_ok(p["date"], start, end)]
     comments = [c for c in download_comments(cookies, api_hdr)
                 if month_ok(c.get("date", c.get("time")), start, end)]
+    # Download friend groups (security masks)
+    friend_groups = download_friend_groups(cookies, api_hdr)
+    # Save friend groups to batch-downloads/friend-groups.json
+    fg_dir = Path("batch-downloads")
+    fg_dir.mkdir(exist_ok=True)
+    with open(fg_dir / "friend-groups.json", "w", encoding="utf-8") as f:
+        json.dump(friend_groups, f, ensure_ascii=False, indent=2)
 
     combine(posts, comments, out_fmt)
     print("Done →", Path(dest).resolve())
