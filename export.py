@@ -211,6 +211,15 @@ def save_as_json(pid, post, cmts, out_fmt):
     else:
         post_dir = Path(f"posts/unknown-date/{pid}")
     post_dir.mkdir(parents=True, exist_ok=True)
+    # Add post_url to post
+    username = post.get("username")
+    if not username:
+        # Try to get from global context if available
+        username = globals().get("LJ_USER")
+    post_url = None
+    if username:
+        post_url = f"https://{username}.livejournal.com/{pid}.html"
+        post["post_url"] = post_url
     # Save main post JSON
     with open(post_dir / "post.json", "w", encoding="utf-8") as f:
         json.dump({"id": pid, "post": post, "comments": cmts}, f, ensure_ascii=False, indent=2)
@@ -222,6 +231,9 @@ def save_as_json(pid, post, cmts, out_fmt):
             cid = comment["id"]
             cdir = comments_dir / str(cid)
             cdir.mkdir(exist_ok=True)
+            # Add comment_url to comment
+            if post_url:
+                comment["comment_url"] = f"{post_url}?thread={cid}#t{cid}"
             with open(cdir / "comment.json", "w", encoding="utf-8") as cf:
                 json.dump(comment, cf, ensure_ascii=False, indent=2)
             for child in comment.get("children", []):
