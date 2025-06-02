@@ -36,12 +36,12 @@ python /opt/livejournal-export/src/export.py \
   --start    "$START_MONTH" \
   --end      "$END_MONTH" \
   --format   json \
-  --dest     "$DEST/posts-json"
+  --dest     "$DEST"
 
 ########################################
 # 4. Images: download & rewrite <img src>
 ########################################
-python /scripts/grab_images.py "$DEST"
+python /opt/livejournal-export/src/grab_images.py "$DEST"
 
 # No legacy cleanup needed; assume blank folder for each run.
 
