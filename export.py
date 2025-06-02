@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 """
-LiveJournal exporter (fork, CLI-enhanced).
+LiveJournal exporter (modernized, Docker/CLI-ready)
 
-Head-less flags
----------------
+Exports all posts, comments, and media from a LiveJournal account into a clean, hierarchical folder structure for long-term archival and offline browsing.
 
+Features:
+- Batch downloads of posts and comments (XML and JSON)
+- Per-post folders: posts/<YYYY>/<MM>/<YYYY-MM-DD-HH-mm-postID>/
+- Per-comment folders: posts/.../comments/<commentID>/
+- Embedded media saved to posts/.../media/
+- User icons saved to images/icons/<userid>/
+- All JSON includes post_url, comment_url, icon_path, and user.profile_url
+- Idempotent: safe to re-run without duplicate downloads
+
+Usage:
+  python export.py -u <username> -p <password> [-s <start>] [-e <end>] [-f <format>] [-d <dest>]
+
+Arguments:
   -u / --username  (required)
   -p / --password  (required)
   -s / --start YYYY-MM   default 0000-01
@@ -12,7 +24,7 @@ Head-less flags
   -f / --format json|html|md  default json
   -d / --dest   output dir    default .
 
-If -u/-p are missing, falls back to the original interactive prompts.
+See README.md for full details and sample output structure.
 """
 import argparse, getpass, json, os, re, sys
 from datetime import datetime

@@ -121,21 +121,37 @@ For 2-factor LJ accounts create an “app-password” under **Account → Passwo
 
 ---
 
-## 6  Project layout
+## 6  Project layout (v0.2.0+)
 
 ```
 .
 ├─ export.py               # main script (with argparse)
 ├─ download_posts.py
 ├─ download_comments.py
-├─ docker/
-│   ├─ Dockerfile
-│   ├─ requirements.txt
-│   ├─ scripts/
-│   │   ├─ lj_full_backup.sh
-│   │   └─ grab_images.py
-└─ run_backup.sh           # root-level helper
+├─ download_friend_groups.py
+├─ Refactoring.md
+├─ README.md
+├─ run_backup.sh           # root-level helper
+├─ posts/                  # per-post folders (YYYY/MM/...) with post.json, media/, comments/
+├─ images/
+│   └─ icons/<userid>/     # user icons
+├─ batch-downloads/
+│   ├─ posts-xml/          # monthly post XMLs
+│   ├─ comments-xml/       # comment XMLs
+│   ├─ posts-json/         # all.json, per-post JSONs
+│   └─ comments-json/      # all.json, per-comment JSONs
+└─ docker/
+    ├─ Dockerfile
+    ├─ requirements.txt
+    └─ scripts/
+        ├─ lj_full_backup.sh
+        └─ grab_images.py
 ```
+
+- All post and comment JSONs now include `post_url`, `comment_url`, and `icon_path` fields.
+- Media is saved per-post in `posts/.../media/`.
+- User icons are saved in `images/icons/<userid>/`.
+- See `Refactoring.md` for migration details and workflow.
 
 ---
 
