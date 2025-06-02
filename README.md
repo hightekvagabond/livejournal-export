@@ -16,14 +16,39 @@ isolated runs.
                    -s 1999-01 -e 2025-06 \
                    -f json     -d /path/out
 
-* `--start/--end` default to the entire history (0000-01 → 9999-12),
-  so only `-u/-p` are strictly required.
+* `--start/--end` default to the entire history (**1999-04** → now), so only `-u/-p` are strictly required.
+  - **Note:** The default start date is April 1999 (`1999-04`), which is when LiveJournal first opened to the public. This ensures you capture all possible posts for any account.
 * Works even when comment objects lack a `date` field.
 * One-shot Docker build + `run_backup.sh` helper:
 
   ```bash
   ./run_backup.sh -d ~/backups/lj
   ```
+
+---
+
+## 0  Environment file (.env) workflow
+
+This project supports a `.env` file for all configuration. Copy `env.example` to `.env` and fill in your values:
+
+```bash
+cp env.example .env
+# Edit .env with your credentials and options
+```
+
+Supported variables in `.env`:
+
+- `LJ_USER`   – LiveJournal username (required)
+- `LJ_PASS`   – LiveJournal password or app-password (required)
+- `DEST`      – Output directory (required)
+- `START`     – Start month (YYYY-MM, optional, default: 1999-04)
+- `END`       – End month (YYYY-MM, optional, default: now)
+- `FORMAT`    – Output format: json, html, or md (optional, default: json)
+- `CLEAR`     – Set to true to clear destination and Docker images before backup (optional)
+
+**Precedence:** CLI flags > `.env` > interactive prompt. Any variable not set in `.env` can be provided as a CLI flag to `run_backup.sh`. If both are set, the CLI flag takes precedence.
+
+See `env.example` for full documentation and best practices.
 
 ---
 
@@ -35,7 +60,7 @@ cd livejournal-export
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r docker/requirements.txt      # reuse the same list
 
-python export.py \
+python src/export.py \
   -u myusername \
   -p my_app_password \
   -s 2000-01 \
@@ -48,10 +73,13 @@ Output layout:
 
 ```
 lj_archive/
-├─ posts-json/        # one JSON per entry (nested comments, local image paths)
-├─ posts-html/        # if -f html
-├─ posts-markdown/    # if -f md
-└─ images/            # downloaded pictures
+├─ posts/                # per-post folders (YYYY/MM/...) with post.json, media/, comments/
+├─ images/               # downloaded user icons
+├─ batch-downloads/
+│   ├─ posts-xml/        # monthly post XMLs
+│   ├─ comments-xml/     # comment XMLs
+│   ├─ posts-json/       # all.json, per-post JSONs
+│   └─ comments-json/    # all.json, per-comment JSONs
 ```
 
 ---
@@ -100,8 +128,8 @@ Subsequent runs build a **new** image only when the commit hash changes.
 | ------------------ | -------- | --------- | --------------------------------- |
 | `-u`, `--username` | ✅        | –         | LiveJournal login name            |
 | `-p`, `--password` | ✅        | –         | Plain or app-password             |
-| `-s`, `--start`    | ▫️       | `0000-01` | First month to export (`YYYY-MM`) |
-| `-e`, `--end`      | ▫️       | `9999-12` | Last month to export (`YYYY-MM`)  |
+| `-s`, `--start`    | ▫️       | `1999-04` | First month to export (`YYYY-MM`) |
+| `-e`, `--end`      | ▫️       | `now`     | Last month to export (`YYYY-MM`)  |
 | `-f`, `--format`   | ▫️       | `json`    | `json`, `html`, or `md`           |
 | `-d`, `--dest`     | ▫️       | `.`       | Destination directory             |
 

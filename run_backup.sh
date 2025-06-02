@@ -53,8 +53,14 @@ done
 # 1. Load .env ---------------------------------------------------------------
 [[ -f "$PROJECT_ROOT/.env" ]] && source "$PROJECT_ROOT/.env"
 
+# Precedence: CLI > .env > prompt
 LJ_USER="${LJ_USER:-}"
 LJ_PASS="${LJ_PASS:-}"
+DEST="${DEST:-}" # DEST is the main output directory
+START="${START:-}" # Start month (YYYY-MM)
+END="${END:-}"     # End month (YYYY-MM)
+FORMAT="${FORMAT:-json}"
+CLEAR="${CLEAR:-false}"
 
 # 2. Pull creds from Bitwarden (same logic as before) ------------------------
 if [[ -z "$LJ_USER" || -z "$LJ_PASS" ]]; then
@@ -90,27 +96,34 @@ fi
 # 4. Resolve backup directory ------------------------------------------------
 if [[ -n "$BACKUP_DIR_CLI" ]]; then
   BACKUP_DIR="$BACKUP_DIR_CLI"
-elif [[ -n "${BACKUP_DIR:-}" ]]; then
-  :  # from .env
+elif [[ -n "$DEST" ]]; then
+  BACKUP_DIR="$DEST"
 else
   DEFAULT_DIR="${PROJECT_ROOT}/backup"
   read -rp "Local directory for backup [${DEFAULT_DIR}]: " BACKUP_DIR
   BACKUP_DIR="${BACKUP_DIR:-$DEFAULT_DIR}"
 fi
 
-if [[ $CLEAR_DEST -eq 1 ]]; then
+# 5. Date range and format from CLI or .env ----------------------------------
+if [[ -n "$START_MONTH" ]]; then
+  START="$START_MONTH"
+fi
+if [[ -n "$END_MONTH" ]]; then
+  END="$END_MONTH"
+fi
+
+# 6. Clear destination if requested ------------------------------------------
+if [[ "$CLEAR" == "true" || $CLEAR_DEST -eq 1 ]]; then
   echo "[TESTING] Clearing all contents of $BACKUP_DIR before backup..."
   rm -rf "$BACKUP_DIR"/*
   echo "[TESTING] Removing all Docker containers and images with ljexport:* ..."
-  # Remove all stopped containers using ljexport images
   docker ps -a --filter ancestor=ljexport --format '{{.ID}}' | xargs -r docker rm
-  # Remove all ljexport images
   docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ljexport:' | xargs -r docker rmi -f
 fi
 
-mkdir -p "$BACKUP_DIR/posts-json" "$BACKUP_DIR/images"
+mkdir -p "$BACKUP_DIR"
 
-# 5. Build Docker image if tag is missing -----------------------------------
+# 7. Build Docker image if tag is missing -----------------------------------
 if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
   echo "Building Docker image $IMAGE_NAME …"
   docker build -f "$DOCKERFILE" -t "$IMAGE_NAME" "$DOCKER_CONTEXT"
@@ -118,13 +131,14 @@ else
   echo "Docker image $IMAGE_NAME already exists – skipping build."
 fi
 
-# 6. Run backup --------------------------------------------------------------
+# 8. Run backup --------------------------------------------------------------
 echo "Running backup – output will appear in $BACKUP_DIR"
 docker run --rm -it \
   -e LJ_USER="$LJ_USER" \
   -e LJ_PASS="$LJ_PASS" \
-  -e START_MONTH="$START_MONTH" \
-  -e END_MONTH="$END_MONTH" \
+  -e START_MONTH="$START" \
+  -e END_MONTH="$END" \
+  -e FORMAT="$FORMAT" \
   -v "$BACKUP_DIR":/backup \
   "$IMAGE_NAME" \
   /opt/livejournal-export/src/lj_full_backup.sh
