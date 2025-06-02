@@ -30,7 +30,7 @@ END_MONTH="${END_MONTH:-$(date -u +%Y-%m)}"          # current month (UTC)
 ########################################
 # 3. Posts + comments + friend groups → JSON
 ########################################
-python /opt/livejournal-export/export.py \
+python /opt/livejournal-export/src/export.py \
   --username "$LJ_USER" \
   --password "$LJ_PASS" \
   --start    "$START_MONTH" \
