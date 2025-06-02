@@ -121,7 +121,10 @@ def main():
     api_hdr = {"User-Agent": UA_API}
 
     print("Login OK – downloading …")
-    posts    = [p for p in download_posts(cookies, api_hdr)
+    # Parse start/end as datetime objects for download_posts
+    start_dt = datetime.strptime(start, "%Y-%m")
+    end_dt = datetime.strptime(end, "%Y-%m")
+    posts    = [p for p in download_posts(cookies, api_hdr, start_dt, end_dt)
                 if month_ok(p["date"], start, end)]
     comments = [c for c in download_comments(cookies, api_hdr)
                 if month_ok(c.get("date", c.get("time")), start, end)]

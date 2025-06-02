@@ -16,19 +16,6 @@ DATE_FORMAT = '%Y-%m'
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    start_month = datetime.strptime(input("Enter start month in YYYY-MM format: "), DATE_FORMAT)
-except Exception as e:
-    print(f"\nError with start month entered. Error: {e}. Exiting...")
-    sysexit(1)
-
-try:
-    end_month = datetime.strptime(input("Enter end month in YYYY-MM format: "), DATE_FORMAT)
-except Exception as e:
-    print(f"\nError with end month entered. Error: {e}. Exiting...")
-    sysexit(1)
-
-
 def fetch_month_posts(year, month, cookies, headers):
     response = requests.post(
         'https://www.livejournal.com/export_do.bml',
@@ -69,8 +56,22 @@ def xml_to_json(xml):
         'current_mood': f('current_mood')
     }
 
-def download_posts(cookies, headers):
+def download_posts(cookies, headers, start_month=None, end_month=None):
     os.makedirs('batch-downloads/posts-xml', exist_ok=True)
+
+    # Use passed-in start/end months if provided (from export.py), else prompt
+    if start_month is None or end_month is None:
+        DATE_FORMAT = '%Y-%m'
+        try:
+            start_month = datetime.strptime(input("Enter start month in YYYY-MM format: "), DATE_FORMAT)
+        except Exception as e:
+            print(f"\nError with start month entered. Error: {e}. Exiting...")
+            sysexit(1)
+        try:
+            end_month = datetime.strptime(input("Enter end month in YYYY-MM format: "), DATE_FORMAT)
+        except Exception as e:
+            print(f"\nError with end month entered. Error: {e}. Exiting...")
+            sysexit(1)
 
     xml_posts = []
     month_cursor = start_month
@@ -92,4 +93,4 @@ def download_posts(cookies, headers):
     return json_posts
 
 if __name__ == '__main__':
-    download_posts()
+    download_posts(None, None)
