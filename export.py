@@ -211,8 +211,23 @@ def save_as_json(pid, post, cmts, out_fmt):
     else:
         post_dir = Path(f"posts/unknown-date/{pid}")
     post_dir.mkdir(parents=True, exist_ok=True)
+    # Save main post JSON
     with open(post_dir / "post.json", "w", encoding="utf-8") as f:
         json.dump({"id": pid, "post": post, "comments": cmts}, f, ensure_ascii=False, indent=2)
+    # Save each comment in its own folder if present
+    if cmts:
+        comments_dir = post_dir / "comments"
+        comments_dir.mkdir(exist_ok=True)
+        def save_comment_tree(comment):
+            cid = comment["id"]
+            cdir = comments_dir / str(cid)
+            cdir.mkdir(exist_ok=True)
+            with open(cdir / "comment.json", "w", encoding="utf-8") as cf:
+                json.dump(comment, cf, ensure_ascii=False, indent=2)
+            for child in comment.get("children", []):
+                save_comment_tree(child)
+        for comment in cmts:
+            save_comment_tree(comment)
 
 
 def save_as_markdown(pid, subfolder, post, cmts_html, out_fmt):
