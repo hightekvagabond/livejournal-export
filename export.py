@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-Extended LiveJournal exporter.
+Extended LiveJournal exporter with optional CLI flags.
 
-* If -u/-p/-s/-e are provided, runs head-less.
-* Otherwise falls back to legacy interactive flow.
+Required for head-less mode:
+  -u / --username
+  -p / --password
+  -s / --start   (YYYY-MM)
+  -e / --end     (YYYY-MM)
+
+Optional:
+  -f / --format  json|html|md  (default: json)
+  -d / --dest    output folder (default: .)
 """
-
 import argparse
 import getpass
 import json
@@ -14,6 +20,7 @@ import re
 import sys
 from datetime import datetime
 from operator import itemgetter
+from pathlib import Path
 
 import html2text
 import requests
@@ -23,35 +30,29 @@ from markdown import markdown
 from download_posts import download_posts
 from download_comments import download_comments
 
-# --------------------------------------------------------------------------- #
-# CLI or interactive -------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
+# ─────────────────── CLI / interactive ──────────────────────────────────── #
 
 
 def parse_cli():
-    """Return tuple (user, pass, start, end, fmt, dest) or None if incomplete."""
-    p = argparse.ArgumentParser(
-        description="Dump all posts & comments from a LiveJournal account"
-    )
+    p = argparse.ArgumentParser()
     p.add_argument("-u", "--username")
     p.add_argument("-p", "--password")
-    p.add_argument("-s", "--start", help="YYYY-MM of first month to export")
-    p.add_argument("-e", "--end", help="YYYY-MM of last  month to export")
+    p.add_argument("-s", "--start", help="first month YYYY-MM")
+    p.add_argument("-e", "--end", help="last month YYYY-MM")
     p.add_argument(
         "-f",
         "--format",
         default="json",
         choices=["json", "html", "md"],
-        help="Output format (default: json)",
+        help="output format (default: json)",
     )
     p.add_argument(
         "-d",
         "--dest",
         default=".",
-        help="Destination directory (default: current)",
+        help="destination folder (default: current dir)",
     )
     args = p.parse_args()
-
     if all([args.username, args.password, args.start, args.end]):
         return (
             args.username,
@@ -65,7 +66,6 @@ def parse_cli():
 
 
 def interactive():
-    """Original prompt-driven flow."""
     start = input("Enter start month in YYYY-MM format: ").strip()
     end = input("Enter end month in YYYY-MM format: ").strip()
     username = input("Enter LiveJournal Username: ").strip()
@@ -73,15 +73,13 @@ def interactive():
     return username, password, start, end, "json", os.getcwd()
 
 
-# --------------------------------------------------------------------------- #
-# HTTP helpers ------------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
+# ─────────────────── HTTP helpers ───────────────────────────────────────── #
 
 
-def get_cookie_value(response, cname):
-    header = response.headers.get("Set-Cookie")
+def get_cookie_value(resp, cname):
+    header = resp.headers.get("Set-Cookie")
     if not header or f"{cname}=" not in header:
-        raise ValueError(f"Cookie {cname} not found in response headers")
+        raise ValueError(f"Cookie {cname} not found")
     return header.split(f"{cname}=")[1].split(";")[0]
 
 
@@ -96,32 +94,31 @@ GENERIC_HEADERS = {
     "sec-ch-ua-platform": '"Windows"',
 }
 
+UA_API = "https://github.com/hightekvagabond/livejournal-export"
 
-# --------------------------------------------------------------------------- #
-# Main --------------------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
+
+# ─────────────────── Main ───────────────────────────────────────────────── #
+
+
+def month_ok(date_str: str, start: str, end: str) -> bool:
+    """Return True if date is between start & end months inclusive."""
+    m = date_str[:7]  # YYYY-MM
+    return start <= m <= end
 
 
 def main():
-    cli_params = parse_cli()
-    if cli_params:
-        user, pw, start, end, out_fmt, dest = cli_params
-    else:
-        user, pw, start, end, out_fmt, dest = interactive()
+    cli = parse_cli() or interactive()
+    user, pw, start, end, out_fmt, dest = cli
 
-    os.makedirs(dest, exist_ok=True)
-    os.chdir(dest)
+    dest_path = Path(dest).resolve()
+    dest_path.mkdir(parents=True, exist_ok=True)
+    os.chdir(dest_path)
 
-    # ─── Pre-login cookie ─────────────────────────────────────────────────── #
-    try:
-        pre = requests.get("https://www.livejournal.com/", headers=GENERIC_HEADERS)
-    except Exception as e:
-        print(f"Cannot reach www.livejournal.com: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    # Pre-login cookie
+    pre = requests.get("https://www.livejournal.com/", headers=GENERIC_HEADERS)
     cookies = {"luid": get_cookie_value(pre, "luid")}
 
-    # ─── Login ────────────────────────────────────────────────────────────── #
+    # Login
     creds = {"user": user, "password": pw}
     r = requests.post(
         "https://www.livejournal.com/login.bml",
@@ -137,41 +134,32 @@ def main():
         "ljloggedin": get_cookie_value(r, "ljloggedin"),
         "ljmastersession": get_cookie_value(r, "ljmastersession"),
     }
-    api_headers = {
-        "User-Agent": "https://github.com/hightekvagabond/livejournal-export",
-    }
+    api_headers = {"User-Agent": UA_API}
 
     print("Login successful. Downloading posts and comments …")
 
-    all_posts = download_posts(
-        cookies=cookies,
-        headers=api_headers,
-        start=start,
-        end=end,
-        fmt=out_fmt,
-    )
-    all_comments = download_comments(
-        cookies=cookies,
-        headers=api_headers,
-        start=start,
-        end=end,
-    )
+    all_posts = download_posts(cookies, api_headers)
+    all_comments = download_comments(cookies, api_headers)
 
-    combine(all_posts, all_comments, out_fmt)
-    print("Done. Output written to", os.path.abspath(dest))
+    # Filter by month range
+    posts_filtered = [
+        p for p in all_posts if month_ok(p["date"], start, end)
+    ]
+    comments_filtered = [
+        c for c in all_comments if month_ok(c["date"], start, end)
+    ]
+
+    combine(posts_filtered, comments_filtered, out_fmt)
+    print("Done. Output saved to", dest_path)
 
 
-# --------------------------------------------------------------------------- #
-# Everything below is unchanged legacy logic (render, combine, etc.) -------- #
-# --------------------------------------------------------------------------- #
+# ─────────────────── Legacy render / combine code (unchanged) ───────────── #
 
 COMMENTS_HEADER = "Комментарии"
-
 TAG = re.compile(r"\[!\[(.*?)\]\(http:\/\/utx.ambience.ru\/img\/.*?\)\]\(.*?\)")
 USER = re.compile(r'<lj user="?(.*?)"?>')
 TAGLESS_NEWLINES = re.compile(r"(?<!>)\n")
 NEWLINES = re.compile(r"(\s*\n){3,}")
-
 SLUGS = {}
 
 
@@ -266,7 +254,7 @@ def comments_to_html(comments):
 def save_as_json(pid, post, comments, out_fmt):
     if out_fmt != "json":
         return
-    os.makedirs("posts-json", exist_ok=True)
+    Path("posts-json").mkdir(exist_ok=True)
     with open(f"posts-json/{pid}.json", "w", encoding="utf-8") as f:
         json.dump({"id": pid, "post": post, "comments": comments}, f, ensure_ascii=False, indent=2)
 
@@ -274,7 +262,7 @@ def save_as_json(pid, post, comments, out_fmt):
 def save_as_markdown(pid, subfolder, post, comments_html, out_fmt):
     if out_fmt != "md":
         return
-    os.makedirs(f"posts-markdown/{subfolder}", exist_ok=True)
+    Path(f"posts-markdown/{subfolder}").mkdir(parents=True, exist_ok=True)
     with open(f"posts-markdown/{subfolder}/{pid}.md", "w", encoding="utf-8") as f:
         f.write(json_to_markdown(post))
     if comments_html:
@@ -285,7 +273,7 @@ def save_as_markdown(pid, subfolder, post, comments_html, out_fmt):
 def save_as_html(pid, subfolder, post, comments_html, out_fmt):
     if out_fmt != "html":
         return
-    os.makedirs(f"posts-html/{subfolder}", exist_ok=True)
+    Path(f"posts-html/{subfolder}").mkdir(parents=True, exist_ok=True)
     with open(f"posts-html/{subfolder}/{pid}.html", "w", encoding="utf-8") as f:
         f.write(json_to_html(post))
         if comments_html:
@@ -293,7 +281,7 @@ def save_as_html(pid, subfolder, post, comments_html, out_fmt):
 
 
 def combine(posts, comments, out_fmt):
-    os.makedirs("comments-markdown", exist_ok=True)
+    Path("comments-markdown").mkdir(exist_ok=True)
     posts_comments = group_comments_by_post(comments)
 
     for post in posts:
@@ -301,6 +289,7 @@ def combine(posts, comments, out_fmt):
         jitemid = int(pid) >> 8
         date = datetime.strptime(post["date"], "%Y-%m-%d %H:%M:%S")
         subfolder = f"{date.year}-{date.month:02d}"
+
         post_comments = (
             nest_comments(posts_comments[jitemid])
             if jitemid in posts_comments
@@ -308,6 +297,7 @@ def combine(posts, comments, out_fmt):
         )
         comments_html = comments_to_html(post_comments) if post_comments else ""
         fix_user_links(post)
+
         save_as_json(pid, post, post_comments, out_fmt)
         save_as_html(pid, subfolder, post, comments_html, out_fmt)
         save_as_markdown(pid, subfolder, post, comments_html, out_fmt)
