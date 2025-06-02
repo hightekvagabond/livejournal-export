@@ -71,11 +71,11 @@ def get_more_comments(start_id, users, cookies, headers):
     return local_max_id, comments
 
 def download_comments(cookies, headers):
-    os.makedirs('comments-xml', exist_ok=True)
-    os.makedirs('comments-json', exist_ok=True)
+    os.makedirs('batch-downloads/comments-xml', exist_ok=True)
+    os.makedirs('batch-downloads/comments-json', exist_ok=True)
 
     metadata_xml = fetch_xml({'get': 'comment_meta', 'startid': 0}, cookies, headers)
-    with open('comments-xml/comment_meta.xml', 'w', encoding='utf-8') as f:
+    with open('batch-downloads/comments-xml/comment_meta.xml', 'w', encoding='utf-8') as f:
         f.write(metadata_xml)
 
     metadata = ET.fromstring(metadata_xml)
@@ -88,7 +88,7 @@ def download_comments(cookies, headers):
         start_id, comments = get_more_comments(start_id + 1, users, cookies, headers)
         all_comments.extend(comments)
 
-    with open('comments-json/all.json', 'w', encoding='utf-8') as f:
+    with open('batch-downloads/comments-json/all.json', 'w', encoding='utf-8') as f:
         f.write(json.dumps(all_comments, ensure_ascii=False, indent=2))
 
     return all_comments
