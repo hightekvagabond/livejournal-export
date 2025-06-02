@@ -20,9 +20,21 @@ for jf in tqdm.tqdm(list(POSTS.glob("*.json")), desc="scanning posts"):
     for c in comments:
         soup.append(BeautifulSoup(c.get("body_html", c.get("body", "")), "lxml"))
 
+    # Determine post date for folder structure
+    post_date = None
+    if "post" in data:
+        post_date = data["post"].get("eventtime") or data["post"].get("date")
+    if post_date:
+        from datetime import datetime
+        dt = datetime.strptime(post_date, "%Y-%m-%d %H:%M:%S")
+        media_dir = ROOT / f"posts/{dt.year}/{dt.month:02d}/{dt.strftime('%Y-%m-%d-%H-%M')}-{data['id']}/media"
+    else:
+        media_dir = ROOT / f"posts/unknown-date/{data['id']}/media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+
     for img in soup.find_all("img", src=True):
         url = img["src"].split("?")[0]
-        fname = IMG_DIR / os.path.basename(url)
+        fname = media_dir / os.path.basename(url)
         print(f"Found image: {url} -> {fname}")
         if not fname.exists():
             try:
@@ -33,7 +45,7 @@ for jf in tqdm.tqdm(list(POSTS.glob("*.json")), desc="scanning posts"):
             except Exception as e:
                 print(f"Failed to download {url}: {e}")
                 continue
-        img["src"] = f"images/{fname.name}"
+        img["src"] = f"media/{fname.name}"
 
     # Save back to the correct field
     if "body_html" in data:
