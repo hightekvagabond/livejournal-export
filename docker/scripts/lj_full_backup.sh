@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# lj_full_backup.sh – runs inside the container
+# Needs: LJ_USER  LJ_PASS   (exported by run_backup.sh)
+# Optional: DEST  (target dir, default /backup)
+
+set -euo pipefail
+
+########################################
+# 0. Validate env vars
+########################################
+: "${LJ_USER?Need LJ_USER env var (LiveJournal username)}"
+: "${LJ_PASS?Need LJ_PASS env var (LiveJournal password / app-password)}"
+
+DEST="${DEST:-/backup}"
+
+########################################
+# 1. Directory prep
+########################################
+mkdir -p "$DEST/posts-json" "$DEST/images"
+
+########################################
+# 2. Date range (full history)
+########################################
+START_MONTH=1999-01                  # earliest plausible LJ month
+END_MONTH=$(date -u +%Y-%m)          # current month (UTC)
+
+########################################
+# 3. Posts + comments → JSON
+########################################
+python /opt/livejournal-export/export.py \
+  --username "$LJ_USER" \
+  --password "$LJ_PASS" \
+  --start    "$START_MONTH" \
+  --end      "$END_MONTH" \
+  --format   json \
+  --dest     "$DEST/posts-json"
+
+########################################
+# 4. Images: download & rewrite <img src>
+########################################
+python /scripts/grab_images.py "$DEST"
+

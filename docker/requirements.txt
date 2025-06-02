@@ -1,0 +1,7 @@
+html2text
+markdown
+beautifulsoup4
+requests
+lxml
+tqdm
+python-dateutil
