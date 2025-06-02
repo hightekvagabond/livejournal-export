@@ -71,7 +71,7 @@ bash run_backup.sh -d /absolute/path/for/archive
 You can now use additional flags for testing and development:
 
 - `--start YYYY-MM` and `--end YYYY-MM` to limit the date range (e.g. only download a few months)
-- `--clear` to delete all contents of the destination folder before backup (useful for clean test runs)
+- `--clear` to delete all contents of the destination folder before backup **and** remove all Docker images/containers with `ljexport:*` (useful for clean test runs and avoiding Docker cache issues)
 
 Example:
 
@@ -79,7 +79,7 @@ Example:
 ./run_backup.sh --dest /tmp/ljtest --start 2010-01 --end 2010-03 --clear
 ```
 
-This will only download posts/comments from Jan–Mar 2010 and clear the output folder before starting.
+This will only download posts/comments from Jan–Mar 2010, clear the output folder, and remove all ljexport Docker images/containers before starting.
 
 `run_backup.sh` will:
 

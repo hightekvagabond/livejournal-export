@@ -24,7 +24,8 @@ Options
   -d, --dest DIR     Host directory where the archive will be written
   -s, --start MONTH  Start month (YYYY-MM) for export (optional, overrides default)
   -e, --end MONTH    End month (YYYY-MM) for export (optional, overrides default)
-  --clear            Delete all contents of the destination folder before backup (for testing)
+  --clear            Delete all contents of the destination folder before backup (for testing),
+                    and remove all Docker images/containers with ljexport:* to avoid caching issues
   -h, --help         Show this help and exit
 EOF
   exit 1
@@ -100,6 +101,11 @@ fi
 if [[ $CLEAR_DEST -eq 1 ]]; then
   echo "[TESTING] Clearing all contents of $BACKUP_DIR before backup..."
   rm -rf "$BACKUP_DIR"/*
+  echo "[TESTING] Removing all Docker containers and images with ljexport:* ..."
+  # Remove all stopped containers using ljexport images
+  docker ps -a --filter ancestor=ljexport --format '{{.ID}}' | xargs -r docker rm
+  # Remove all ljexport images
+  docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ljexport:' | xargs -r docker rmi -f
 fi
 
 mkdir -p "$BACKUP_DIR/posts-json" "$BACKUP_DIR/images"
