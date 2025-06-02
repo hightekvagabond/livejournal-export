@@ -40,3 +40,5 @@ python /opt/livejournal-export/export.py \
 ########################################
 python /scripts/grab_images.py "$DEST"
 
+# No legacy cleanup needed; assume blank folder for each run.
+
