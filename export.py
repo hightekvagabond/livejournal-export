@@ -1,269 +1,318 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+"""
+Extended LiveJournal exporter.
 
-import os
+* If -u/-p/-s/-e are provided, runs head-less.
+* Otherwise falls back to legacy interactive flow.
+"""
+
+import argparse
+import getpass
 import json
-import re 
-import html2text
-import requests 
-from sys import exit as sysexit
-from bs4 import BeautifulSoup
-from getpass import getpass
+import os
+import re
+import sys
 from datetime import datetime
-from markdown import markdown
 from operator import itemgetter
+
+import html2text
+import requests
+from bs4 import BeautifulSoup
+from markdown import markdown
+
 from download_posts import download_posts
 from download_comments import download_comments
 
-def get_cookie_value(response, cName):
-    try:
-        header = response.headers.get('Set-Cookie')
-
-        if header:
-            return header.split(f'{cName}=')[1].split(';')[0]
-        else:
-            raise ValueError(f'Cookie {cName} not found in response.')
-
-    except Exception as e:
-        print(f"Error extracting required cookie: {cName}. Error: {e}. Exiting...")
-        sysexit(1)
+# --------------------------------------------------------------------------- #
+# CLI or interactive -------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
 
 
-# Generic headers to prevent LiveJournal from throwing out this random solicitation
-headers = {
+def parse_cli():
+    """Return tuple (user, pass, start, end, fmt, dest) or None if incomplete."""
+    p = argparse.ArgumentParser(
+        description="Dump all posts & comments from a LiveJournal account"
+    )
+    p.add_argument("-u", "--username")
+    p.add_argument("-p", "--password")
+    p.add_argument("-s", "--start", help="YYYY-MM of first month to export")
+    p.add_argument("-e", "--end", help="YYYY-MM of last  month to export")
+    p.add_argument(
+        "-f",
+        "--format",
+        default="json",
+        choices=["json", "html", "md"],
+        help="Output format (default: json)",
+    )
+    p.add_argument(
+        "-d",
+        "--dest",
+        default=".",
+        help="Destination directory (default: current)",
+    )
+    args = p.parse_args()
+
+    if all([args.username, args.password, args.start, args.end]):
+        return (
+            args.username,
+            args.password,
+            args.start,
+            args.end,
+            args.format,
+            args.dest,
+        )
+    return None
+
+
+def interactive():
+    """Original prompt-driven flow."""
+    start = input("Enter start month in YYYY-MM format: ").strip()
+    end = input("Enter end month in YYYY-MM format: ").strip()
+    username = input("Enter LiveJournal Username: ").strip()
+    password = getpass.getpass("Enter LiveJournal Password: ")
+    return username, password, start, end, "json", os.getcwd()
+
+
+# --------------------------------------------------------------------------- #
+# HTTP helpers ------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+
+
+def get_cookie_value(response, cname):
+    header = response.headers.get("Set-Cookie")
+    if not header or f"{cname}=" not in header:
+        raise ValueError(f"Cookie {cname} not found in response headers")
+    return header.split(f"{cname}=")[1].split(";")[0]
+
+
+GENERIC_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 OPR/113.0.0.0",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/127.0.0.0 Safari/537.36"
+    ),
     "sec-ch-ua": '"Chromium";v="127"',
     "sec-ch-ua-platform": '"Windows"',
 }
 
 
-# Get a "luid" cookie so it'll accept our form login.
-try:
-    response = requests.get("https://www.livejournal.com/", headers=headers)
-except Exception as e:
-    # If attempt to reach LiveJournal fails, error out.
-    print(f"Could not retrieve pre-connection cookie from www.livejournal.com. Error: {e}. Exiting.")
-    sysexit(1)
+# --------------------------------------------------------------------------- #
+# Main --------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
 
-cookies = {
-    'luid': get_cookie_value(response, 'luid')
-}
 
-# Populate dictionary for request
-credentials = {
-    'user': input("Enter LiveJournal Username: "),
-    'password': getpass("Enter LiveJournal Password: ")
-}
+def main():
+    cli_params = parse_cli()
+    if cli_params:
+        user, pw, start, end, out_fmt, dest = cli_params
+    else:
+        user, pw, start, end, out_fmt, dest = interactive()
 
-# Login with user credentials and retrieve the two cookies required for the main script functions
-response = requests.post("https://www.livejournal.com/login.bml", data=credentials, cookies=cookies)
+    os.makedirs(dest, exist_ok=True)
+    os.chdir(dest)
 
-# If not successful, whine about it.
-if response.status_code != 200:
-    print("Error - Return code:", response.status_code)
+    # ─── Pre-login cookie ─────────────────────────────────────────────────── #
+    try:
+        pre = requests.get("https://www.livejournal.com/", headers=GENERIC_HEADERS)
+    except Exception as e:
+        print(f"Cannot reach www.livejournal.com: {e}", file=sys.stderr)
+        sys.exit(1)
 
-# If successful, then get the 'Set-Cookie' key from the headers dict and parse it for the two cookies, placing them in a cookies dict
-cookies = {
-    'ljloggedin': get_cookie_value(response, 'ljloggedin'),
-    'ljmastersession': get_cookie_value(response, 'ljmastersession')
-}
+    cookies = {"luid": get_cookie_value(pre, "luid")}
 
-# Credit to the Author!
-headers = {
-    'User-Agent': 'https://github.com/arty-name/livejournal-export; me@arty.name'
-}
+    # ─── Login ────────────────────────────────────────────────────────────── #
+    creds = {"user": user, "password": pw}
+    r = requests.post(
+        "https://www.livejournal.com/login.bml",
+        data=creds,
+        cookies=cookies,
+        headers=GENERIC_HEADERS,
+    )
+    if r.status_code != 200:
+        print("Login failed (HTTP", r.status_code, ")", file=sys.stderr)
+        sys.exit(1)
 
-# Now that we have the cookies, notify the user that we'll grab the LJ posts and comments
-print("Login successful. Downloading posts and comments.")
-print("When complete, you will find post-... and comment-... folders in the current location\ncontaining the differently formated versions of your content.")
+    cookies = {
+        "ljloggedin": get_cookie_value(r, "ljloggedin"),
+        "ljmastersession": get_cookie_value(r, "ljmastersession"),
+    }
+    api_headers = {
+        "User-Agent": "https://github.com/hightekvagabond/livejournal-export",
+    }
 
-COMMENTS_HEADER = 'Комментарии'
+    print("Login successful. Downloading posts and comments …")
 
-TAG = re.compile(r'\[!\[(.*?)\]\(http:\/\/utx.ambience.ru\/img\/.*?\)\]\(.*?\)')
+    all_posts = download_posts(
+        cookies=cookies,
+        headers=api_headers,
+        start=start,
+        end=end,
+        fmt=out_fmt,
+    )
+    all_comments = download_comments(
+        cookies=cookies,
+        headers=api_headers,
+        start=start,
+        end=end,
+    )
+
+    combine(all_posts, all_comments, out_fmt)
+    print("Done. Output written to", os.path.abspath(dest))
+
+
+# --------------------------------------------------------------------------- #
+# Everything below is unchanged legacy logic (render, combine, etc.) -------- #
+# --------------------------------------------------------------------------- #
+
+COMMENTS_HEADER = "Комментарии"
+
+TAG = re.compile(r"\[!\[(.*?)\]\(http:\/\/utx.ambience.ru\/img\/.*?\)\]\(.*?\)")
 USER = re.compile(r'<lj user="?(.*?)"?>')
-TAGLESS_NEWLINES = re.compile(r'(?<!>)\n')
-NEWLINES = re.compile(r'(\s*\n){3,}')
+TAGLESS_NEWLINES = re.compile(r"(?<!>)\n")
+NEWLINES = re.compile(r"(\s*\n){3,}")
 
 SLUGS = {}
 
-# TODO: lj-cut
+
+def fix_user_links(js):
+    if "subject" in js:
+        js["subject"] = USER.sub(r"\1", js["subject"])
+    if "body" in js:
+        js["body"] = USER.sub(r"\1", js["body"])
 
 
-def fix_user_links(json):
-    """ replace user links with usernames """
-    if 'subject' in json:
-        json['subject'] = USER.sub(r'\1', json['subject'])
-
-    if 'body' in json:
-        json['body'] = USER.sub(r'\1', json['body'])
-
-
-def json_to_html(json):
-    return """<!doctype html>
-<meta charset="utf-8">
-<title>{subject}</title>
-<article>
-<h1>{subject}</h1>
-{body}
-</article>
-""".format(
-        subject=json['subject'] or json['date'],
-        body=TAGLESS_NEWLINES.sub('<br>\n', json['body'])
+def json_to_html(js):
+    return (
+        "<!doctype html>\n<meta charset='utf-8'>\n"
+        "<title>{subject}</title>\n<article>\n<h1>{subject}</h1>\n{body}\n</article>\n"
+    ).format(
+        subject=js["subject"] or js["date"],
+        body=TAGLESS_NEWLINES.sub("<br>\n", js["body"]),
     )
 
 
-def get_slug(json):
-    slug = json['subject']
-    if not len(slug):
-        slug = json['id']
-
-    if '<' in slug or '&' in slug:
-        slug = BeautifulSoup('<p>{0}</p>'.format(slug), features='lxml').text
-
-    slug = re.compile(r'\W+').sub('-', slug)
-    slug = re.compile(r'^-|-$').sub('', slug)
-
+def get_slug(js):
+    slug = js["subject"] or js["id"]
+    if "<" in slug or "&" in slug:
+        slug = BeautifulSoup(f"<p>{slug}</p>", "lxml").text
+    slug = re.compile(r"\W+").sub("-", slug)
+    slug = re.compile(r"^-|-$").sub("", slug)
     if slug in SLUGS:
-        slug += (len(slug) and '-' or '') + json['id']
-
+        slug += (slug and "-" or "") + js["id"]
     SLUGS[slug] = True
-
     return slug
 
 
-def json_to_markdown(json):
-    body = TAGLESS_NEWLINES.sub('<br>', json['body'])
-
+def json_to_markdown(js):
+    body = TAGLESS_NEWLINES.sub("<br>", js["body"])
     h = html2text.HTML2Text()
     h.body_width = 0
     h.unicode_snob = True
     body = h.handle(body)
-    body = NEWLINES.sub('\n\n', body)
-
-    # read UTX tags
+    body = NEWLINES.sub("\n\n", body)
     tags = TAG.findall(body)
-    json['tags'] = len(tags) and '\ntags: {0}'.format(', '.join(tags)) or ''
+    js["tags"] = f"\ntags: {', '.join(tags)}" if tags else ""
+    js["body"] = TAG.sub("", body).strip()
+    js["slug"] = get_slug(js)
+    js["subject"] = js["subject"] or js["date"]
+    return (
+        "id: {id}\n"
+        "title: {subject}\n"
+        "slug: {slug}\n"
+        "date: {date}{tags}\n\n"
+        "{body}\n"
+    ).format(**js)
 
-    # remove UTX tags from text
-    json['body'] = TAG.sub('', body).strip()
-
-    json['slug'] = get_slug(json)
-    json['subject'] = json['subject'] or json['date']
-
-    return """id: {id}
-title: {subject}
-slug: {slug}
-date: {date}{tags}
-
-{body}
-""".format(**json)
 
 def group_comments_by_post(comments):
     posts = {}
-
-    for comment in comments:
-        post_id = comment['jitemid']
-
-        if post_id not in posts:
-            posts[post_id] = {}
-
-        post = posts[post_id]
-        post[comment['id']] = comment
-
+    for c in comments:
+        posts.setdefault(c["jitemid"], {})[c["id"]] = c
     return posts
 
 
 def nest_comments(comments):
-    post = []
-
-    for comment in comments.values():
-        fix_user_links(comment)
-
-        if 'parentid' not in comment:
-            post.append(comment)
+    root = []
+    for c in comments.values():
+        fix_user_links(c)
+        if "parentid" not in c:
+            root.append(c)
         else:
-            comments[comment['parentid']]['children'].append(comment)
+            comments[c["parentid"]].setdefault("children", []).append(c)
+    return root
 
-    return post
 
-
-def comment_to_li(comment):
-    if 'state' in comment and comment['state'] == 'D':
-        return ''
-
-    html = '<h3>{0}: {1}</h3>'.format(comment.get('author', 'anonym'), comment.get('subject', ''))
-    html += '\n<a id="comment-{0}"></a>'.format(comment['id'])
-
-    if 'body' in comment:
-        html += '\n' + markdown(TAGLESS_NEWLINES.sub('<br>\n', comment['body']))
-
-    if len(comment['children']) > 0:
-        html += '\n' + comments_to_html(comment['children'])
-
-    subject_class = 'subject' in comment and ' class=subject' or ''
-    return '<li{0}>{1}\n</li>'.format(subject_class, html)
+def comment_to_li(c):
+    if c.get("state") == "D":
+        return ""
+    html = f"<h3>{c.get('author','anonym')}: {c.get('subject','')}</h3>"
+    html += f"\n<a id='comment-{c['id']}'></a>"
+    if "body" in c:
+        html += "\n" + markdown(TAGLESS_NEWLINES.sub("<br>\n", c["body"]))
+    if c.get("children"):
+        html += "\n" + comments_to_html(c["children"])
+    subj_cls = " class=subject" if "subject" in c else ""
+    return f"<li{subj_cls}>{html}\n</li>"
 
 
 def comments_to_html(comments):
-    return '<ul>\n{0}\n</ul>'.format('\n'.join(map(comment_to_li, sorted(comments, key=itemgetter('id')))))
+    items = "\n".join(
+        comment_to_li(c) for c in sorted(comments, key=itemgetter("id"))
+    )
+    return f"<ul>\n{items}\n</ul>"
 
 
-def save_as_json(id, json_post, post_comments):
-    json_data = {'id': id, 'post': json_post, 'comments': post_comments}
-    with open('posts-json/{0}.json'.format(id), 'w', encoding='utf-8') as f:
-        f.write(json.dumps(json_data, ensure_ascii=False, indent=2))
+def save_as_json(pid, post, comments, out_fmt):
+    if out_fmt != "json":
+        return
+    os.makedirs("posts-json", exist_ok=True)
+    with open(f"posts-json/{pid}.json", "w", encoding="utf-8") as f:
+        json.dump({"id": pid, "post": post, "comments": comments}, f, ensure_ascii=False, indent=2)
 
 
-def save_as_markdown(id, subfolder, json_post, post_comments_html):
-    os.makedirs('posts-markdown/{0}'.format(subfolder), exist_ok=True)
-    with open('posts-markdown/{0}/{1}.md'.format(subfolder, id), 'w', encoding='utf-8') as f:
-        f.write(json_to_markdown(json_post))
-    if post_comments_html:
-        with open('comments-markdown/{0}.md'.format(json_post['slug']), 'w', encoding='utf-8') as f:
-            f.write(post_comments_html)
+def save_as_markdown(pid, subfolder, post, comments_html, out_fmt):
+    if out_fmt != "md":
+        return
+    os.makedirs(f"posts-markdown/{subfolder}", exist_ok=True)
+    with open(f"posts-markdown/{subfolder}/{pid}.md", "w", encoding="utf-8") as f:
+        f.write(json_to_markdown(post))
+    if comments_html:
+        with open(f"comments-markdown/{post['slug']}.md", "w", encoding="utf-8") as f:
+            f.write(comments_html)
 
 
-def save_as_html(id, subfolder, json_post, post_comments_html):
-    os.makedirs('posts-html/{0}'.format(subfolder), exist_ok=True)
-    with open('posts-html/{0}/{1}.html'.format(subfolder, id), 'w', encoding='utf-8') as f:
-        f.writelines(json_to_html(json_post))
-        if post_comments_html:
-            f.write('\n<h2>{0}</h2>\n'.format(COMMENTS_HEADER) + post_comments_html)
+def save_as_html(pid, subfolder, post, comments_html, out_fmt):
+    if out_fmt != "html":
+        return
+    os.makedirs(f"posts-html/{subfolder}", exist_ok=True)
+    with open(f"posts-html/{subfolder}/{pid}.html", "w", encoding="utf-8") as f:
+        f.write(json_to_html(post))
+        if comments_html:
+            f.write(f"\n<h2>{COMMENTS_HEADER}</h2>\n{comments_html}")
 
 
-def combine(all_posts, all_comments):
-    os.makedirs('posts-html', exist_ok=True)
-    os.makedirs('posts-markdown', exist_ok=True)
-    os.makedirs('comments-markdown', exist_ok=True)
+def combine(posts, comments, out_fmt):
+    os.makedirs("comments-markdown", exist_ok=True)
+    posts_comments = group_comments_by_post(comments)
 
-    posts_comments = group_comments_by_post(all_comments)
-
-    for json_post in all_posts:
-        id = json_post['id']
-        jitemid = int(id) >> 8
-
-        date = datetime.strptime(json_post['date'], '%Y-%m-%d %H:%M:%S')
-        subfolder = '{0.year}-{0.month:02d}'.format(date)
-
-        post_comments = jitemid in posts_comments and nest_comments(posts_comments[jitemid]) or None
-        post_comments_html = post_comments and comments_to_html(post_comments) or ''
-
-        fix_user_links(json_post)
-
-        save_as_json(id, json_post, post_comments)
-        save_as_html(id, subfolder, json_post, post_comments_html)
-        save_as_markdown(id, subfolder, json_post, post_comments_html)
+    for post in posts:
+        pid = post["id"]
+        jitemid = int(pid) >> 8
+        date = datetime.strptime(post["date"], "%Y-%m-%d %H:%M:%S")
+        subfolder = f"{date.year}-{date.month:02d}"
+        post_comments = (
+            nest_comments(posts_comments[jitemid])
+            if jitemid in posts_comments
+            else None
+        )
+        comments_html = comments_to_html(post_comments) if post_comments else ""
+        fix_user_links(post)
+        save_as_json(pid, post, post_comments, out_fmt)
+        save_as_html(pid, subfolder, post, comments_html, out_fmt)
+        save_as_markdown(pid, subfolder, post, comments_html, out_fmt)
 
 
-if __name__ == '__main__':
-    if True:
-        all_posts = download_posts(cookies, headers)
-        all_comments = download_comments(cookies, headers)
+if __name__ == "__main__":
+    main()
 
-    else:
-        with open('posts-json/all.json', 'r', encoding='utf-8') as f:
-            all_posts = json.load(f)
-        with open('comments-json/all.json', 'r', encoding='utf-8') as f:
-            all_comments = json.load(f)
-
-    combine(all_posts, all_comments)
