@@ -16,7 +16,7 @@ DEST="${DEST:-/backup}"
 ########################################
 # 1. Directory prep
 ########################################
-mkdir -p "$DEST/posts-json" "$DEST/images"
+mkdir -p "$DEST/batch-downloads" "$DEST/images" "$DEST/posts"
 
 ########################################
 # 2. Date range (full history)
