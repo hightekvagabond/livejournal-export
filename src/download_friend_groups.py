@@ -28,9 +28,10 @@ from xml.etree import ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from download_posts import download_posts
-from download_comments import download_comments
-from download_friend_groups import download_friend_groups
+# Remove these lines to avoid circular import
+# from download_posts import download_posts
+# from download_comments import download_comments
+# from download_friend_groups import download_friend_groups
 
 # ---------------------------------------------------------------------------
 # XML‑RPC helpers
