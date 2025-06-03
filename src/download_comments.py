@@ -283,6 +283,38 @@ def get_comments_for_post(post_id, cookies, headers):
         logger.error(f"Error fetching comments for post {post_id}: {e}")
         return []
 
+def get_userinfo_by_userid(userid, cookies, headers):
+    """Fetch user info (username, profile_url, default userpic) for a given userid using getuserinfo API."""
+    url = "https://www.livejournal.com/interface/xmlrpc"
+    headers_rpc = {'Content-Type': 'application/xml'}
+    xml_body = f"""
+    <methodCall>
+      <methodName>LJ.XMLRPC.getuserinfo</methodName>
+      <params>
+        <param><value><string>{userid}</string></value></param>
+      </params>
+    </methodCall>
+    """
+    try:
+        response = requests.post(url, headers=headers_rpc, data=xml_body, cookies=cookies, timeout=20)
+        if response.status_code == 200:
+            root = ET.fromstring(response.text)
+            user = root.find('.//struct')
+            if user is not None:
+                def get_val(name):
+                    for m in user.findall('member'):
+                        if m.find('name') is not None and m.find('name').text == name:
+                            return m.find('value').findtext('.//string')
+                    return None
+                return {
+                    'username': get_val('user'),
+                    'profile_url': get_val('profile_url'),
+                    'default_userpic_url': get_val('defaultpicurl'),
+                }
+    except Exception as e:
+        logger.error(f"Error fetching userinfo for userid {userid}: {e}")
+    return None
+
 def download_comments(cookies, headers):
     logger.info("Starting comment download process...")
     os.makedirs('batch-downloads/comments-xml', exist_ok=True)
@@ -307,10 +339,25 @@ def download_comments(cookies, headers):
         for comment in comments:
             posterid = comment.get('posterid')
             if posterid:
-                # Get the userpic URL (from cache if available)
-                url = userpic_mgr.get_userpic_url(posterid, comment.get('userpicid'), "comment", f"post {post_id} comment {comment['id']}")
+                # Get user info for this commenter
+                userinfo = get_userinfo_by_userid(posterid, cookies, headers)
+                if userinfo:
+                    comment['username'] = userinfo.get('username')
+                    comment['profile_url'] = userinfo.get('profile_url')
+                    # Prefer comment's userpicid, else default
+                    userpicid = comment.get('userpicid')
+                    if userpicid:
+                        url = userpic_mgr.get_userpic_url(posterid, userpicid, "comment", f"post {post_id} comment {comment['id']}")
+                        comment['userpic_url'] = url
+                    else:
+                        comment['userpic_url'] = userinfo.get('default_userpic_url')
+                else:
+                    comment['username'] = None
+                    comment['profile_url'] = None
+                    comment['userpic_url'] = None
+                # Download the userpic if needed (optional, for local cache)
+                url = comment.get('userpic_url')
                 if url:
-                    # Download the userpic if needed
                     icon_path = userpic_mgr.download_userpic(posterid, comment.get('userpicid'), url)
                     comment["icon_path"] = icon_path
                 else:

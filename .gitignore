@@ -10,3 +10,5 @@ posts-xml
 posts-json
 posts-markdown
 posts-html
+.claude/
+claudecode-env-vars

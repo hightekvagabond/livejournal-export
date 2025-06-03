@@ -22,6 +22,23 @@ echo "PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-not set}"
 echo "RUN_TESTS: ${RUN_TESTS:-false}"
 echo "=== Environment check complete ==="
 
+if [[ "${DEBUG_LEVEL:-0}" -ge 2 ]]; then
+  echo "[LJ_FULL_BACKUP DEBUG] Running as UID: $(id -u), GID: $(id -g), USER: $(id -un 2>/dev/null || echo 'unknown')"
+fi
+
+# Attempt to chown /backup and working directory if we have sudo/root
+if command -v sudo >/dev/null 2>&1; then
+  echo "[DEBUG] Attempting to chown /backup and working dir to current UID/GID using sudo..."
+  sudo chown -R $(id -u):$(id -g) /backup || echo "[WARN] Failed to chown /backup"
+  sudo chown -R $(id -u):$(id -g) . || echo "[WARN] Failed to chown working directory"
+elif [ "$(id -u)" = "0" ]; then
+  echo "[DEBUG] Running as root, chowning /backup and working dir..."
+  chown -R 1000:1000 /backup || echo "[WARN] Failed to chown /backup"
+  chown -R 1000:1000 . || echo "[WARN] Failed to chown working directory"
+else
+  echo "[DEBUG] Not root and no sudo, skipping chown."
+fi
+
 ########################################
 # 0. Validate env vars
 ########################################
@@ -30,14 +47,22 @@ echo "=== Environment check complete ==="
 
 DEST="${DEST:-/backup}"
 
+# Early debug: check working directory and DEST before any tests or writes
+if [[ "${DEBUG_LEVEL:-0}" -ge 2 ]]; then
+  echo "[DEBUG] Early check: Working directory: $(pwd)"
+  ls -ld . || echo "[DEBUG] Could not stat current working directory"
+  echo "[DEBUG] Early check: DEST: ${DEST:-/backup}"
+  ls -ld "${DEST:-/backup}" || echo "[DEBUG] Could not stat DEST (${DEST:-/backup})"
+fi
+
 ########################################
 # 1. Run tests if requested
 ########################################
 if [[ "${RUN_TESTS:-false}" == "true" || "${RUN_TESTS:-0}" == "1" ]]; then
   echo "=== Running unit tests ==="
-  cd /opt/livejournal-export/src
-  # Create a temporary __init__.py if it doesn't exist
-  touch __init__.py
+  mkdir -p "$DEST/tmp"
+  # Create a temporary __init__.py in /backup/tmp instead of the codebase
+  touch "$DEST/tmp/__init__.py"
   # Run tests with src directory in PYTHONPATH
   PYTHONPATH=/opt/livejournal-export/src python3 -m unittest discover -v tests
   TEST_RESULT=$?
@@ -52,6 +77,12 @@ fi
 ########################################
 # 2. Directory prep
 ########################################
+if [[ "${DEBUG_LEVEL:-0}" -ge 2 ]]; then
+  echo "[DEBUG] Checking ownership and permissions of DEST: $DEST"
+  ls -ld "$DEST" || echo "[DEBUG] Could not stat $DEST"
+  echo "[DEBUG] Listing first 10 files in $DEST (if any):"
+  ls -l "$DEST" | head -n 10 || echo "[DEBUG] Could not list $DEST"
+fi
 echo "=== Creating directories ==="
 mkdir -p "$DEST/batch-downloads" "$DEST/images" "$DEST/posts"
 echo "Directories created successfully"

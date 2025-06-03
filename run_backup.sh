@@ -185,9 +185,19 @@ mkdir -p "$BACKUP_DIR"
 echo "[TESTING] Done creating $BACKUP_DIR"
 
 # 7. Build Docker image if tag is missing -----------------------------------
-if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+# Detect invoking user's UID and GID for correct file ownership
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+
+# Build Docker image with host UID/GID as build args
+REBUILD_IMAGE=0
+if [[ $DEBUG_LEVEL -ge 3 ]]; then
+  echo "[DEBUG] Forcing Docker image rebuild due to debug level 3+"
+  REBUILD_IMAGE=1
+fi
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1 || [[ $REBUILD_IMAGE -eq 1 ]]; then
   echo "Building Docker image $IMAGE_NAME …"
-  if ! docker build -f "$DOCKERFILE" -t "$IMAGE_NAME" "$DOCKER_CONTEXT"; then
+  if ! docker build --build-arg HOST_UID="$HOST_UID" --build-arg HOST_GID="$HOST_GID" -f "$DOCKERFILE" -t "$IMAGE_NAME" "$DOCKER_CONTEXT"; then
     echo "Error: Failed to build Docker image"
     exit 1
   fi
@@ -202,8 +212,10 @@ echo "Note: Inside the container, $BACKUP_DIR is mounted as /backup"
 # Ensure Python output is not buffered
 export PYTHONUNBUFFERED=1
 
-# Run Docker with proper output handling
+# Run Docker with proper output handling and user mapping
 if ! docker run --rm -it \
+  -e HOST_UID="$HOST_UID" \
+  -e HOST_GID="$HOST_GID" \
   -e LJ_USER="$LJ_USER" \
   -e LJ_PASS="$LJ_PASS" \
   -e START_MONTH="$START" \
