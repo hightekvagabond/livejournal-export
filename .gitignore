@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .idea
 .env
+tests/tmp/
 comments-json
 comments-xml
 comments-markdown

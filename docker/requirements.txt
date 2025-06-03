@@ -1,9 +1,0 @@
-# NOTE: This requirements.txt is used for Docker builds and local development. All code is now in src/.
-
-html2text
-markdown
-beautifulsoup4
-requests
-lxml
-tqdm
-python-dateutil

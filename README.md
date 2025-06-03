@@ -52,27 +52,53 @@ See `env.example` for full documentation and best practices.
 
 ---
 
-## 1  Stand-alone Python usage
+## 1  Recommended: Run with `run_backup.sh` (Docker + Bash)
+
+This is the easiest and most robust way to run the exporter. It requires Docker and Bash (Linux/macOS/WSL).
+
+### 🔐 Secure credentials: Bitwarden CLI support
+
+For maximum security, you can use the [Bitwarden CLI](https://bitwarden.com/help/cli/) to provide your LiveJournal credentials at runtime. If Bitwarden CLI (`bw`) and `jq` are installed and unlocked, `run_backup.sh` will prompt you to select a credential containing "livejournal" from your Bitwarden vault. This avoids storing your password in plaintext on disk.
+
+- If Bitwarden CLI is available, leave `LJ_USER` and `LJ_PASS` blank in your `.env` file (or unset them in your shell).
+- The script will search for items with "livejournal" in the name and let you pick the correct one.
+- If Bitwarden is not available, it will fall back to `.env`, CLI flags, or prompt you interactively.
+
+---
+
+You can also use CLI flags or a `.env` file for configuration:
 
 ```bash
-git clone https://github.com/hightekvagabond/livejournal-export.git
-cd livejournal-export
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r docker/requirements.txt      # reuse the same list
-
-python src/export.py \
-  -u myusername \
-  -p my_app_password \
-  -s 2000-01 \
-  -e 2025-06 \
-  -f json \
-  -d ~/lj_archive
+./run_backup.sh --dest /absolute/path/for/archive \
+                --start 2010-01 --end 2010-03
 ```
 
-Output layout:
+Or, with a `.env` file:
+
+```bash
+cp env.example .env
+# Edit .env with your credentials and options
+./run_backup.sh
+```
+
+### Supported flags for `run_backup.sh`
+
+| Flag               | Required | Default   | Meaning                           |
+| ------------------ | -------- | --------- | --------------------------------- |
+| `-d`, `--dest`     | ✅        | –         | Host directory for archive        |
+| `-s`, `--start`    | ▫️       | `1999-04` | First month to export (`YYYY-MM`) |
+| `-e`, `--end`      | ▫️       | `now`     | Last month to export (`YYYY-MM`)  |
+| `--clear`          | ▫️       | `false`   | Clear dest & Docker images first  |
+| `-h`, `--help`     | ▫️       |           | Show help and exit                |
+
+- All variables can also be set in `.env` (see `env.example`).
+- CLI flags take precedence over `.env`.
+- Credentials can be provided via `.env`, CLI, or Bitwarden CLI integration.
+
+### Output layout
 
 ```
-lj_archive/
+archive/
 ├─ posts/                # per-post folders (YYYY/MM/...) with post.json, media/, comments/
 ├─ images/               # downloaded user icons
 ├─ batch-downloads/
@@ -84,57 +110,48 @@ lj_archive/
 
 ---
 
-## 2  Docker quick-start (recommended)
+## 2  Run in Docker manually
 
-> Perfect when you don’t want Python deps on your host.
+If you want to run the exporter in Docker without the helper script:
 
 ```bash
 # 1. build (tagged with current commit hash)
 docker build -f docker/Dockerfile -t ljexport:$(git rev-parse --short=12 HEAD) .
 
-# 2. run once, interactively
-bash run_backup.sh -d /absolute/path/for/archive
+# 2. run interactively
+export LJ_USER=youruser
+export LJ_PASS=yourpass
+export START_MONTH=2010-01
+export END_MONTH=2010-03
+export DEST=/absolute/path/for/archive
+
+docker run --rm -it \
+  -e LJ_USER -e LJ_PASS -e START_MONTH -e END_MONTH -e DEST \
+  -v "$DEST":/backup \
+  ljexport:$(git rev-parse --short=12 HEAD) \
+  /opt/livejournal-export/src/lj_full_backup.sh
 ```
-
-You can now use additional flags for testing and development:
-
-- `--start YYYY-MM` and `--end YYYY-MM` to limit the date range (e.g. only download a few months)
-- `--clear` to delete all contents of the destination folder before backup **and** remove all Docker images/containers with `ljexport:*` (useful for clean test runs and avoiding Docker cache issues)
-
-Example:
-
-```bash
-./run_backup.sh --dest /tmp/ljtest --start 2010-01 --end 2010-03 --clear
-```
-
-This will only download posts/comments from Jan–Mar 2010, clear the output folder, and remove all ljexport Docker images/containers before starting.
-
-`run_backup.sh` will:
-
-1. read `LJ_USER` / `LJ_PASS` from `.env`, or fetch them from Bitwarden CLI,
-   or prompt you;
-2. auto-build the image for the current commit if it doesn’t exist;
-3. bind-mount your chosen archive folder;
-4. execute `src/lj_full_backup.sh` inside the container, which in
-   turn runs `export.py` and `grab_images.py`.
-
-Subsequent runs build a **new** image only when the commit hash changes.
 
 ---
 
-## 3  CLI flag reference
+## 3  Stand-alone Python usage
 
-| Flag               | Required | Default   | Meaning                           |
-| ------------------ | -------- | --------- | --------------------------------- |
-| `-u`, `--username` | ✅        | –         | LiveJournal login name            |
-| `-p`, `--password` | ✅        | –         | Plain or app-password             |
-| `-s`, `--start`    | ▫️       | `1999-04` | First month to export (`YYYY-MM`) |
-| `-e`, `--end`      | ▫️       | `now`     | Last month to export (`YYYY-MM`)  |
-| `-f`, `--format`   | ▫️       | `json`    | `json`, `html`, or `md`           |
-| `-d`, `--dest`     | ▫️       | `.`       | Destination directory             |
+If you want to run the exporter directly in Python (no Docker):
 
-If either `-u` or `-p` is omitted, the script falls back to the legacy prompts
-(start month, end month, user, pass).
+```bash
+git clone https://github.com/hightekvagabond/livejournal-export.git
+cd livejournal-export
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r docker/requirements.txt
+
+python src/export.py \
+  -u myusername \
+  -p my_app_password \
+  -s 2000-01 \
+  -e 2025-06 \
+  -f json \
+  -d ~/lj_archive
+```
 
 ---
 

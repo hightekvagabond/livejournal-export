@@ -10,6 +10,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="$PROJECT_ROOT/docker/Dockerfile"
 DOCKER_CONTEXT="$PROJECT_ROOT"
+REQUIREMENTS_FILE="$PROJECT_ROOT/requirements.txt"
 
 # Tag image with current Git commit hash
 GIT_COMMIT=$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD)
