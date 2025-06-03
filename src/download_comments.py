@@ -22,20 +22,24 @@ class UserpicManager:
     def __init__(self, cookies, headers):
         self.cookies = cookies
         self.headers = headers
-        self.cache = {}  # user_id -> userpic URL or None
+        self.cache = {}  # user_id -> {userpicid -> url}
         self.USERPIC_API = "https://www.livejournal.com/interface/xmlrpc"
         self.download_count = 0
         self.cache_hits = 0
         self.total_requests = 0
         
-    def get_userpic_url(self, userid, source_type=None, source_id=None):
+    def get_userpic_url(self, userid, userpicid=None, source_type=None, source_id=None):
         """Get userpic URL from cache or API, with built-in caching"""
         self.total_requests += 1
         
+        # Initialize user's cache if needed
+        if userid not in self.cache:
+            self.cache[userid] = {}
+            
         # Check cache first
-        if userid in self.cache:
+        if userpicid and userpicid in self.cache[userid]:
             self.cache_hits += 1
-            return self.cache[userid]
+            return self.cache[userid][userpicid]
         
         source_info = f" from {source_type} {source_id}" if source_type and source_id else ""
         logger.debug(f"Fetching userpic URL for user {userid}{source_info}")
@@ -53,7 +57,7 @@ class UserpicManager:
         )
         body = (
             f"<?xml version='1.0'?>"
-            f"<methodCall><methodName>LJ.XMLRPC.getuserpics</methodName><params>{xml_params}</params></methodCall>"
+            f"<methodCall><methodName>LJ.XMLRPC.userpics.get</methodName><params>{xml_params}</params></methodCall>"
         )
         
         try:
@@ -61,26 +65,38 @@ class UserpicManager:
             r.raise_for_status()
             
             root = ET.fromstring(r.text)
-            # Find the first userpic URL (default)
-            url_elem = root.find(".//member[name='url']/value/string")
             
-            if url_elem is not None:
-                url = url_elem.text
-                self.cache[userid] = url
-                return url
+            # Check for fault
+            fault = root.find(".//fault")
+            if fault is not None:
+                fault_string = fault.find(".//string")
+                if fault_string is not None:
+                    logger.error(f"API returned fault for user {userid}: {fault_string.text}")
+                return None
+            
+            # Process all userpics
+            for userpic in root.findall(".//userpic"):
+                picid = userpic.find("id")
+                url = userpic.find("url")
+                if picid is not None and url is not None:
+                    self.cache[userid][picid.text] = url.text
+            
+            # Return specific userpic if requested, otherwise return default
+            if userpicid and userpicid in self.cache[userid]:
+                return self.cache[userid][userpicid]
+            elif self.cache[userid]:
+                # Return first userpic as default
+                return next(iter(self.cache[userid].values()))
                 
             # No userpic found
             logger.debug(f"No userpic found for user {userid}{source_info}")
-            self.cache[userid] = None
             return None
             
         except Exception as e:
             logger.error(f"Error fetching userpic for user {userid}{source_info}: {e}")
-            # Cache errors too to avoid repeated failed requests
-            self.cache[userid] = None
             return None
     
-    def download_userpic(self, userid, url):
+    def download_userpic(self, userid, userpicid, url):
         """Download userpic if needed and return the local path"""
         if not url:
             return None
@@ -88,7 +104,7 @@ class UserpicManager:
         icon_dir = f"images/icons/{userid}"
         os.makedirs(icon_dir, exist_ok=True)
         ext = os.path.splitext(url)[1] or ".jpg"
-        icon_path = f"{icon_dir}/default{ext}"
+        icon_path = f"{icon_dir}/{userpicid}{ext}"
         
         # Skip if already downloaded
         if os.path.exists(icon_path):
@@ -194,48 +210,66 @@ def get_comments_for_post(post_id, cookies, headers):
     
     # Convert post_id to ditemid (post_id << 8)
     ditemid = int(post_id) << 8
+    logger.debug(f"Using ditemid {ditemid} for post {post_id}")
     
-    # XML-RPC call to get comments for this post
+    # XML-RPC call to get comments
     payload = {
         "auth_method": "cookie",
         "ver": "1",
         "ditemid": ditemid,
-        "journal": os.environ.get('LJ_USER')
+        "journal": os.environ.get('LJ_USER'),
+        "includeposter": "1",
+        "expand_meta": "1"
     }
     
-    # Build XML-RPC request
+    # Construct XML-RPC request
     xml_params = "".join(
-        f"<member><name>{key}</name><value><{'int' if key == 'ditemid' else 'string'}>{value}</{'int' if key == 'ditemid' else 'string'}></value></member>"
-        for key, value in payload.items()
+        f"<param><value><string>{value}</string></value></param>" for value in payload.values()
     )
     body = (
         f"<?xml version='1.0'?>"
-        f"<methodCall><methodName>LJ.XMLRPC.getcomments</methodName><params><param><value><struct>{xml_params}</struct></value></param></params></methodCall>"
+        f"<methodCall><methodName>LJ.XMLRPC.getcomments</methodName><params>{xml_params}</params></methodCall>"
     )
     
     try:
-        r = requests.post("https://www.livejournal.com/interface/xmlrpc", 
-                         data=body, 
-                         headers=headers, 
-                         cookies=cookies, 
-                         timeout=30)
-        r.raise_for_status()
+        response = requests.post(
+            "https://www.livejournal.com/interface/xmlrpc",
+            data=body,
+            headers=headers,
+            cookies=cookies,
+            timeout=30
+        )
+        response.raise_for_status()
         
-        root = ET.fromstring(r.text)
+        # Log the full response for debugging
+        logger.debug(f"API Response for post {post_id}: {response.text}")
+        
+        root = ET.fromstring(response.text)
+        
+        # Check for fault
+        fault = root.find(".//fault")
+        if fault is not None:
+            fault_string = fault.find(".//string")
+            if fault_string is not None:
+                logger.error(f"API returned fault for post {post_id}: {fault_string.text}")
+            return []
+        
         comments = []
-        
-        # Process each comment in the response
         for comment_xml in root.findall(".//comment"):
             comment = {
                 'jitemid': int(comment_xml.attrib['jitemid']),
                 'id': int(comment_xml.attrib['id']),
                 'children': []
             }
+            
+            # Get all comment properties
             get_comment_property('parentid', comment_xml, comment)
             get_comment_property('posterid', comment_xml, comment)
+            get_comment_property('userpicid', comment_xml, comment)
             get_comment_element('date', comment_xml, comment)
             get_comment_element('subject', comment_xml, comment)
             get_comment_element('body', comment_xml, comment)
+            get_comment_element('postername', comment_xml, comment)
             
             if 'state' in comment_xml.attrib:
                 comment['state'] = comment_xml.attrib['state']
@@ -274,13 +308,24 @@ def download_comments(cookies, headers):
             posterid = comment.get('posterid')
             if posterid:
                 # Get the userpic URL (from cache if available)
-                url = userpic_mgr.get_userpic_url(posterid, "comment", f"post {post_id} comment {comment['id']}")
+                url = userpic_mgr.get_userpic_url(posterid, comment.get('userpicid'), "comment", f"post {post_id} comment {comment['id']}")
                 if url:
                     # Download the userpic if needed
-                    icon_path = userpic_mgr.download_userpic(posterid, url)
+                    icon_path = userpic_mgr.download_userpic(posterid, comment.get('userpicid'), url)
                     comment["icon_path"] = icon_path
                 else:
                     comment["icon_path"] = None
+        
+        # Save comments to post-specific directory if there are any
+        if comments:
+            # Find the post directory
+            post_dirs = glob.glob(f'posts/*/*/*-{post_id}')
+            if post_dirs:
+                post_dir = post_dirs[0]
+                comments_path = os.path.join(post_dir, 'comments.json')
+                with open(comments_path, 'w', encoding='utf-8') as f:
+                    json.dump(comments, f, ensure_ascii=False, indent=2)
+                logger.debug(f"Saved {len(comments)} comments to {comments_path}")
         
         all_comments.extend(comments)
         logger.debug(f"Processed comments for post {post_id}")

@@ -11,19 +11,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import sys
-import time
 
-# Move DATE_FORMAT to module level
 DATE_FORMAT = '%Y-%m'
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from logger import setup_logger
-from download_comments import UserpicManager, fetch_xml
-
-logger = setup_logger(__name__)
 
 def fetch_month_posts(year, month, cookies, headers):
-    logger.debug(f"Fetching posts for {year}-{month:02d}")
     response = requests.post(
         'https://www.livejournal.com/export_do.bml',
         headers=headers,
@@ -45,10 +38,6 @@ def fetch_month_posts(year, month, cookies, headers):
             'field_currents': 'on'
         }
     )
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch posts for {year}-{month:02d}: HTTP {response.status_code}")
-        raise RuntimeError(f"HTTP {response.status_code}")
-    logger.debug(f"Successfully fetched posts for {year}-{month:02d}")
     return response.text
 
 def xml_to_json(xml):
@@ -67,71 +56,93 @@ def xml_to_json(xml):
         'current_mood': f('current_mood')
     }
 
-def download_posts(cookies, headers, start_date=None, end_date=None):
-    """Download posts from LiveJournal API."""
-    logger.info("Starting post download process...")
+def download_posts(cookies, headers, start_month=None, end_month=None):
     os.makedirs('batch-downloads/posts-xml', exist_ok=True)
-    os.makedirs('batch-downloads/posts-json', exist_ok=True)
-    os.makedirs('images/icons', exist_ok=True)
+    os.makedirs('batch-downloads/comments-xml', exist_ok=True)  # Create directory for comments
 
-    # Create userpic manager
-    userpic_mgr = UserpicManager(cookies, headers)
+    # Use passed-in start/end months if provided (from export.py), else prompt
+    if start_month is None or end_month is None:
+        DATE_FORMAT = '%Y-%m'
+        try:
+            start_month = datetime.strptime(input("Enter start month in YYYY-MM format: "), DATE_FORMAT)
+        except Exception as e:
+            print(f"\nError with start month entered. Error: {e}. Exiting...")
+            sysexit(1)
+        try:
+            end_month = datetime.strptime(input("Enter end month in YYYY-MM format: "), DATE_FORMAT)
+        except Exception as e:
+            print(f"\nError with end month entered. Error: {e}. Exiting...")
+            sysexit(1)
 
-    # Initialize list to store all posts
-    all_posts = []
+    xml_posts = []
+    month_cursor = start_month
+
+    while month_cursor <= end_month:
+        year = month_cursor.year
+        month = month_cursor.month
+
+        xml = fetch_month_posts(year, month, cookies, headers)
+        xml_posts.extend(list(ET.fromstring(xml).iter('entry')))
+
+        with open(f'batch-downloads/posts-xml/{year}-{month:02d}.xml', 'w+', encoding='utf-8') as file:
+            file.write(xml)
+        
+        month_cursor = month_cursor + relativedelta(months=1)  
+
+    json_posts = list(map(xml_to_json, xml_posts))
+
+    # Fetch comments for post ID 338230
+    comments = get_comments("hightekvagabond", "your_password", 338230)
+    if comments:
+        # Save comments to a file or process them as needed
+        with open('batch-downloads/comments-xml/comments_338230.xml', 'w+', encoding='utf-8') as file:
+            file.write(ET.tostring(comments, encoding='unicode'))
+
+    return json_posts
+
+def get_comments(username, password, itemid):
+    url = "https://www.livejournal.com/interface/xmlrpc"
+    headers = {'Content-Type': 'application/xml'}
     
-    # Iterate through each month in the range
-    current_date = start_date
-    while current_date <= end_date:
-        logger.debug(f"Fetching posts for {current_date.year}-{current_date.month:02d}")
-        
-        # Get post metadata for this month
-        metadata_xml = fetch_month_posts(current_date.year, current_date.month, cookies, headers)
-        xml_path = f'batch-downloads/posts-xml/post_meta_{current_date.year}_{current_date.month:02d}.xml'
-        with open(xml_path, 'w', encoding='utf-8') as f:
-            f.write(metadata_xml)
-        logger.debug(f"Saved post metadata XML to {xml_path}")
-
-        metadata = ET.fromstring(metadata_xml)
-        
-        # Process each post in the XML
-        for post_xml in metadata.findall('.//entry'):
-            post = xml_to_json(post_xml)
-            
-            # Process userpics for post authors
-            posterid = post.get('posterid')
-            if posterid:
-                # Get the userpic URL (from cache if available)
-                url = userpic_mgr.get_userpic_url(posterid, "post", post['id'])
-                if url:
-                    # Download the userpic if needed
-                    icon_path = userpic_mgr.download_userpic(posterid, url)
-                    post["icon_path"] = icon_path
-                else:
-                    post["icon_path"] = None
-
-            # Save post to JSON
-            post_id = post['id']
-            with open(f'batch-downloads/posts-json/{post_id}.json', 'w', encoding='utf-8') as f:
-                json.dump(post, f, ensure_ascii=False, indent=2)
-            all_posts.append(post)
-
-        # Move to next month
-        if current_date.month == 12:
-            current_date = current_date.replace(year=current_date.year + 1, month=1)
-        else:
-            current_date = current_date.replace(month=current_date.month + 1)
-        
-        # Avoid overwhelming the server
-        time.sleep(0.5)  # Brief pause between months
-
-    logger.info(f"Processed {len(all_posts)} total posts")
+    # Construct the XML-RPC request
+    xml_body = f"""
+    <methodCall>
+      <methodName>LJ.XMLRPC.getcomments</methodName>
+      <params>
+        <param>
+          <value>
+            <struct>
+              <member>
+                <name>username</name>
+                <value><string>{username}</string></value>
+              </member>
+              <member>
+                <name>password</name>
+                <value><string>{password}</string></value>
+              </member>
+              <member>
+                <name>itemid</name>
+                <value><int>{itemid}</int></value>
+              </member>
+            </struct>
+          </value>
+        </param>
+      </params>
+    </methodCall>
+    """
     
-    # Print final cache stats
-    stats = userpic_mgr.get_stats()
-    logger.info(f"Final userpic cache stats: {stats['cache_size']} users cached, {stats['hit_rate']} hit rate, {stats['downloaded']} icons downloaded")
-
-    return all_posts
+    # Send the request
+    response = requests.post(url, headers=headers, data=xml_body)
+    
+    # Parse the response
+    if response.status_code == 200:
+        root = ET.fromstring(response.text)
+        # Process the comments from the response
+        # This will depend on the structure of the response
+        return root
+    else:
+        print(f"Error: {response.status_code}")
+        return None
 
 if __name__ == '__main__':
     download_posts(None, None)
