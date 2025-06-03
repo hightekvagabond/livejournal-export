@@ -89,11 +89,16 @@ cp env.example .env
 | `-s`, `--start`    | ▫️       | `1999-04` | First month to export (`YYYY-MM`) |
 | `-e`, `--end`      | ▫️       | `now`     | Last month to export (`YYYY-MM`)  |
 | `--clear`          | ▫️       | `false`   | Clear dest & Docker images first  |
+| `--show`           | ▫️       | `false`   | Show backup contents summary      |
+| `--no-bw-auto`     | ▫️       | `false`   | Always prompt for Bitwarden creds |
 | `-h`, `--help`     | ▫️       |           | Show help and exit                |
 
 - All variables can also be set in `.env` (see `env.example`).
 - CLI flags take precedence over `.env`.
 - Credentials can be provided via `.env`, CLI, or Bitwarden CLI integration.
+- Bitwarden integration (including auto-select) only works if Bitwarden CLI (`bw`) and `jq` are installed and unlocked.
+- If Bitwarden CLI is not available, the script will fall back to `.env` or interactive prompts.
+- When Bitwarden CLI is available, if it returns only one LiveJournal credential, it will be used automatically unless `--no-bw-auto` is set.
 
 ### Output layout
 
@@ -158,7 +163,7 @@ python src/export.py \
 ## 4  Incremental backups
 
 `export.py` re-downloads everything each run (cheap, thanks to LJ limits), but
-`grab_images.py` skips files that already exist, so it’s safe to cron weekly:
+`grab_images.py` skips files that already exist, so it's safe to cron weekly:
 
 ```bash
 0 4 * * 0 cd /path/to/livejournal-export && \
@@ -175,7 +180,7 @@ python src/export.py \
 | **Docker** (optional)        | container workflow          | [https://docs.docker.com/get-docker/](https://docs.docker.com/get-docker/) |
 | **jq** + **Bitwarden CLI**   | auto-fetch creds (optional) | `apt install jq bw` / `brew install jq bw`                                 |
 
-For 2-factor LJ accounts create an “app-password” under **Account → Passwords → App Passwords**.
+For 2-factor LJ accounts create an "app-password" under **Account → Passwords → App Passwords**.
 
 ---
 
@@ -221,8 +226,8 @@ For 2-factor LJ accounts create an “app-password” under **Account → Passwo
 | Symptom                        | Fix                                                                      |
 | ------------------------------ | ------------------------------------------------------------------------ |
 | Prompts still appear           | Make sure you provided `-u/-p` *or* set them in `.env`.                  |
-| `KeyError: 'date'` on comments | You’re on an old commit; pull latest (the patch handles missing `date`). |
-| Docker image never rebuilds    | You forgot to commit; the hash didn’t change.                            |
+| `KeyError: 'date'` on comments | You're on an old commit; pull latest (the patch handles missing `date`). |
+| Docker image never rebuilds    | You forgot to commit; the hash didn't change.                            |
 | LiveJournal returns 403        | Use an **app-password** instead of your normal one.                      |
 
 ---

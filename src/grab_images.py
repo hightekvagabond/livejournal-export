@@ -32,7 +32,12 @@ for jf in tqdm.tqdm(list(find_post_jsons()), desc="scanning posts"):
     for c in comments:
         soup.append(BeautifulSoup(c.get("body_html", c.get("body", "")), "lxml"))
 
-    # Determine post date for folder structure
+    # Find all images first
+    images = soup.find_all("img", src=True)
+    if not images:
+        continue  # Skip if no images found
+
+    # Only create media directory if we have images
     post_date = None
     if "post" in data:
         post_date = data["post"].get("eventtime") or data["post"].get("date")
@@ -44,7 +49,7 @@ for jf in tqdm.tqdm(list(find_post_jsons()), desc="scanning posts"):
         media_dir = ROOT / f"posts/unknown-date/{data['id']}/media"
     media_dir.mkdir(parents=True, exist_ok=True)
 
-    for img in soup.find_all("img", src=True):
+    for img in images:
         url = img["src"].split("?")[0]
         fname = media_dir / os.path.basename(url)
         print(f"Found image: {url} -> {fname}")

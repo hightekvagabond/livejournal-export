@@ -43,7 +43,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from download_posts import download_posts
 from download_comments import download_comments
 from download_friend_groups import download_friend_groups
+from logger import setup_logger
 
+logger = setup_logger(__name__)
 
 # ─────────────────── CLI / interactive ─────────────────────────────────── #
 def parse_cli():
@@ -95,6 +97,32 @@ def month_ok(date_str: str | None, lo: str, hi: str) -> bool:
     return lo <= m <= hi
 
 
+def login(username: str, password: str) -> tuple[dict, dict]:
+    """Login to LiveJournal and return cookies and headers for API calls."""
+    pre = requests.get("https://www.livejournal.com/", headers=HDRS)
+    cookies = {"luid": ck(pre, "luid")}
+
+    logger.debug("Attempting login...")
+    r = requests.post(
+        "https://www.livejournal.com/login.bml",
+        data={"user": username, "password": password},
+        cookies=cookies,
+        headers=HDRS,
+    )
+    if r.status_code != 200:
+        logger.error(f"Login failed with status code {r.status_code}")
+        raise RuntimeError(f"Login failed ({r.status_code})")
+
+    cookies = {
+        "ljloggedin": ck(r, "ljloggedin"),
+        "ljmastersession": ck(r, "ljmastersession"),
+    }
+    api_hdr = {"User-Agent": UA_API}
+    
+    logger.info("Login successful")
+    return cookies, api_hdr
+
+
 # ─────────────────── Main ──────────────────────────────────────────────── #
 def main():
     user, pw, start, end, out_fmt, dest = parse_cli() or interactive()
@@ -102,42 +130,42 @@ def main():
     Path(dest).mkdir(parents=True, exist_ok=True)
     os.chdir(dest)
 
-    pre = requests.get("https://www.livejournal.com/", headers=HDRS)
-    cookies = {"luid": ck(pre, "luid")}
+    logger.info("Starting LiveJournal export...")
+    logger.debug(f"Export parameters: start={start}, end={end}, format={out_fmt}, dest={dest}")
 
-    r = requests.post(
-        "https://www.livejournal.com/login.bml",
-        data={"user": user, "password": pw},
-        cookies=cookies,
-        headers=HDRS,
-    )
-    if r.status_code != 200:
-        sys.exit(f"Login failed ({r.status_code})")
+    try:
+        cookies, api_hdr = login(user, pw)
+    except RuntimeError as e:
+        sys.exit(str(e))
 
-    cookies = {
-        "ljloggedin":    ck(r, "ljloggedin"),
-        "ljmastersession": ck(r, "ljmastersession"),
-    }
-    api_hdr = {"User-Agent": UA_API}
-
-    print("Login OK – downloading …")
+    logger.info("Login successful – downloading content...")
     # Parse start/end as datetime objects for download_posts
     start_dt = datetime.strptime(start, "%Y-%m")
     end_dt = datetime.strptime(end, "%Y-%m")
-    posts    = [p for p in download_posts(cookies, api_hdr, start_dt, end_dt)
-                if month_ok(p["date"], start, end)]
+    
+    logger.debug("Downloading posts...")
+    posts = [p for p in download_posts(cookies, api_hdr, start_dt, end_dt)
+            if month_ok(p["date"], start, end)]
+    logger.info(f"Downloaded {len(posts)} posts")
+    
+    logger.debug("Downloading comments...")
     comments = [c for c in download_comments(cookies, api_hdr)
-                if month_ok(c.get("date", c.get("time")), start, end)]
+            if month_ok(c.get("date", c.get("time")), start, end)]
+    logger.info(f"Downloaded {len(comments)} comments")
+    
     # Download friend groups (security masks)
+    logger.debug("Downloading friend groups...")
     friend_groups = download_friend_groups(cookies, api_hdr)
     # Save friend groups to batch-downloads/friend-groups.json
     fg_dir = Path("batch-downloads")
     fg_dir.mkdir(exist_ok=True)
     with open(fg_dir / "friend-groups.json", "w", encoding="utf-8") as f:
         json.dump(friend_groups, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved {len(friend_groups)} friend groups")
 
+    logger.debug("Combining and saving content...")
     combine(posts, comments, out_fmt)
-    print("Done →", Path(dest).resolve())
+    logger.info(f"Export complete → {Path(dest).resolve()}")
 
 
 # ─────────────────── unchanged legacy helpers (combine, HTML, etc.) ───── #
@@ -276,6 +304,9 @@ def save_as_json(pid, post, cmts, out_fmt):
                 save_comment_tree(child)
         for comment in cmts:
             save_comment_tree(comment)
+        # Only create comments.json if there are comments
+        with open(f"{post_dir}/comments.json", "w", encoding="utf-8") as f:
+            json.dump(cmts, f, ensure_ascii=False, indent=2)
 
 
 def save_as_markdown(pid, subfolder, post, cmts_html, out_fmt):
@@ -316,5 +347,13 @@ def combine(posts, comments, out_fmt):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.error("Process interrupted by user (KeyboardInterrupt).")
+        print("\nProcess interrupted by user.", file=sys.stderr) # Also print a simple message to stderr
+        sys.exit(130) # Standard exit code for Ctrl+C
+    except Exception as e:
+        logger.exception(f"An unhandled exception occurred: {e}")
+        sys.exit(1)
 

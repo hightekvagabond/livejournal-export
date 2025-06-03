@@ -8,3 +8,4 @@ lxml
 tqdm
 python-dateutil
 feedparser
+pytest

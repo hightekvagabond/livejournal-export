@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """download_friend_groups.py
 
-Utilities for fetching the authenticated user’s LiveJournal friend groups
+Utilities for fetching the authenticated user's LiveJournal friend groups
 (aka custom security filters).
 
 Typical usage within the Docker container:
@@ -27,6 +27,9 @@ import requests
 from xml.etree import ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from logger import setup_logger
+
+logger = setup_logger(__name__)
 
 # Remove these lines to avoid circular import
 # from download_posts import download_posts
@@ -41,6 +44,7 @@ RPC_URL = "https://www.livejournal.com/interface/xmlrpc"
 
 def _rpc_call(method: str, params: Dict[str, str], cookies: Dict[str, str], headers: Dict[str, str]):
     """Low‑level XML‑RPC POST helper. Returns raw XML response text."""
+    logger.debug(f"Making XML-RPC call to {method}")
     # Build a minimal XML‑RPC request
     xml_params = "".join(
         f"<param><value><string>{value}</string></value></param>" for value in params.values()
@@ -50,13 +54,19 @@ def _rpc_call(method: str, params: Dict[str, str], cookies: Dict[str, str], head
         f"<methodCall><methodName>{method}</methodName><params>{xml_params}</params></methodCall>"
     )
 
-    r = requests.post(RPC_URL, data=body, headers=headers, cookies=cookies, timeout=30)
-    r.raise_for_status()
-    return r.text
+    try:
+        r = requests.post(RPC_URL, data=body, headers=headers, cookies=cookies, timeout=30)
+        r.raise_for_status()
+        logger.debug(f"XML-RPC call to {method} successful")
+        return r.text
+    except Exception as e:
+        logger.error(f"XML-RPC call to {method} failed: {e}")
+        raise
 
 
 def _parse_friend_groups(xml_text: str) -> List[Dict]:
     """Parse <friendgroups> response into a list of dicts."""
+    logger.debug("Parsing friend groups XML response")
     root = ET.fromstring(xml_text)
     members = root.findall(".//member[name='friendgroups']/value/array/data/value/struct")
 
@@ -68,6 +78,7 @@ def _parse_friend_groups(xml_text: str) -> List[Dict]:
             value_elem = member.find("value/*[1]")  # first child of <value>
             group_dict[name] = value_elem.text or ""
         groups.append(group_dict)
+    logger.debug(f"Parsed {len(groups)} friend groups")
     return groups
 
 
@@ -77,12 +88,15 @@ def _parse_friend_groups(xml_text: str) -> List[Dict]:
 
 def download_friend_groups(cookies: Dict[str, str], headers: Dict[str, str]) -> List[Dict]:
     """Return a list of friend‑group dicts using cookie authentication."""
+    logger.info("Downloading friend groups...")
     payload = {
         "auth_method": "cookie",
         "ver": "1",
     }
     xml_resp = _rpc_call("LJ.XMLRPC.getfriendgroups", payload, cookies, headers)
-    return _parse_friend_groups(xml_resp)
+    groups = _parse_friend_groups(xml_resp)
+    logger.info(f"Successfully downloaded {len(groups)} friend groups")
+    return groups
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +114,7 @@ def _cli():
     blob = json.load(sys.stdin)
     groups = download_friend_groups(blob["cookies"], blob["headers"])
     out_file.write_text(json.dumps(groups, indent=2, ensure_ascii=False))
-    print(f"Saved {len(groups)} groups → {out_file}")
+    logger.info(f"Saved {len(groups)} groups → {out_file}")
 
 
 if __name__ == "__main__":
