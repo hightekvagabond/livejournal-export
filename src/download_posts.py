@@ -67,28 +67,150 @@ def fetch_comments(post_id, cookies, headers):
     )
     return response.text
 
+def extract_lj_usernames(text):
+    """Extract LiveJournal usernames from text using <lj user=username> tags."""
+    if not text:
+        return set()
+    usernames = set()
+    # Find all <lj user=username> tags
+    lj_user_pattern = r'<lj\s+user=([^>]+)>'
+    matches = re.findall(lj_user_pattern, text)
+    # Clean up usernames (remove quotes and whitespace)
+    usernames.update(match.strip('"\' ') for match in matches)
+    return usernames
+
 def comments_xml_to_json(xml):
+    """Convert comments XML to JSON format, handling deleted comments."""
     root = ET.fromstring(xml)
     comments = []
+    user_map = {}  # Map of userid -> username
+    
     for comment in root.findall('.//comment'):
+        comment_data = {
+            'id': comment.get('id'),
+            'jitemid': comment.get('jitemid'),
+            'posterid': comment.get('posterid'),
+            'parentid': comment.get('parentid'),
+            'date': comment.find('date').text if comment.find('date') is not None else None,
+            'deleted': False
+        }
+        
+        # Check for username in the comment
+        username = comment.get('user')
+        if username:
+            user_map[comment.get('posterid')] = username.strip('"\' ')
+        
+        # Handle subject if present
+        subject = comment.find('subject')
+        if subject is not None and subject.text:
+            comment_data['subject'] = subject.text
+        
+        # Handle body
         body_element = comment.find('body')
-        if body_element is not None:
-            comments.append({
-                'id': comment.get('id'),
-                'jitemid': comment.get('jitemid'),
-                'posterid': comment.get('posterid'),
-                'parentid': comment.get('parentid'),
-                'body': body_element.text,
-                'date': comment.find('date').text
-            })
+        if body_element is not None and body_element.text:
+            comment_data['body'] = body_element.text
+            # Extract usernames from body text
+            usernames = extract_lj_usernames(body_element.text)
+            for username in usernames:
+                if comment.get('posterid'):
+                    user_map[comment.get('posterid')] = username
         else:
-            print(f"Warning: Comment {comment.get('id')} has no body element.")
-    return comments
+            comment_data['deleted'] = True
+            comment_data['body'] = None
+        
+        comments.append(comment_data)
+    
+    return comments, user_map
+
+def fetch_user_info(username, cookies, headers):
+    """Fetch user information using the LiveJournal API."""
+    # Clean up username
+    username = username.strip('"\' ')
+    
+    # Try to get user info directly
+    response = requests.get(
+        'https://www.livejournal.com/export_do.bml',
+        params={
+            'type': 'user',
+            'what': 'user',
+            'user': username
+        },
+        headers=headers,
+        cookies=cookies
+    )
+    
+    if response.status_code == 200 and response.text:
+        try:
+            root = ET.fromstring(response.text)
+            user = root.find('.//user')
+            if user is not None:
+                return response.text
+        except Exception as e:
+            print(f"Error parsing user info for username {username}: {str(e)}")
+    
+    return None
+
+def xml_to_user_json(xml):
+    """Convert user XML to JSON format."""
+    root = ET.fromstring(xml)
+    user = root.find('.//user')
+    if user is None:
+        return None
+    
+    return {
+        'username': user.find('username').text if user.find('username') is not None else None,
+        'userid': user.find('userid').text if user.find('userid') is not None else None,
+        'fullname': user.find('fullname').text if user.find('fullname') is not None else None,
+        'url': user.find('url').text if user.find('url') is not None else None,
+        'journaltype': user.find('journaltype').text if user.find('journaltype') is not None else None,
+        'last_updated': user.find('last_updated').text if user.find('last_updated') is not None else None
+    }
+
+def save_user_info(user_json, userid):
+    """Save user information to a JSON file."""
+    user_dir = f'users/{userid}'
+    os.makedirs(user_dir, exist_ok=True)
+    
+    # If no user info was found, save a minimal record
+    if not user_json:
+        user_json = {
+            "profile_unavailable": True,
+            "last_checked": datetime.now().isoformat()
+        }
+    
+    with open(f'{user_dir}/user.json', 'w+', encoding='utf-8') as file:
+        json.dump(user_json, file, indent=4)
+
+def collect_user_ids(post_json, comments_json):
+    """Collect all user IDs from a post and its comments."""
+    user_ids = set()
+    
+    # Add post author
+    if 'author' in post_json:
+        user_ids.add(post_json['author'])
+    
+    # Add comment authors
+    if comments_json:
+        for comment in comments_json:
+            if 'posterid' in comment:
+                user_ids.add(comment['posterid'])
+    
+    return user_ids
+
+def save_user_mapping(user_map):
+    """Save the user ID to username mapping to a JSON file."""
+    if not user_map:
+        return
+    
+    os.makedirs('users', exist_ok=True)
+    with open('users/user_map.json', 'w+', encoding='utf-8') as file:
+        json.dump(user_map, file, indent=4)
 
 def download_posts(cookies, headers, start_month=None, end_month=None):
     # Create necessary directories
     os.makedirs('batch-downloads/posts-xml', exist_ok=True)
     os.makedirs('batch-downloads/comments-xml', exist_ok=True)
+    os.makedirs('users', exist_ok=True)
 
     # Use passed-in start/end months if provided (from export.py), else prompt
     if start_month is None or end_month is None:
@@ -105,6 +227,8 @@ def download_posts(cookies, headers, start_month=None, end_month=None):
 
     xml_posts = []
     month_cursor = start_month
+    all_user_ids = set()
+    user_map = {}  # Global user mapping
 
     while month_cursor <= end_month:
         year = month_cursor.year
@@ -133,16 +257,22 @@ def download_posts(cookies, headers, start_month=None, end_month=None):
         
         # Fetch and save comments for this post
         comments = fetch_comments(post_json['id'], cookies, headers)
+        comments_json = None
         if comments:
             # Save XML comments
             with open(f'batch-downloads/comments-xml/comments_{post_json["id"]}.xml', 'w+', encoding='utf-8') as file:
                 file.write(comments)
             
             # Convert to JSON and save alongside post
-            comments_json = comments_xml_to_json(comments)
+            comments_json, post_user_map = comments_xml_to_json(comments)
+            user_map.update(post_user_map)  # Update global user mapping
             comments_path = f'{post_dir}/comments.json'
             with open(comments_path, 'w+', encoding='utf-8') as file:
                 json.dump(comments_json, file, indent=4)
+        
+        # Collect user IDs from post and comments
+        user_ids = collect_user_ids(post_json, comments_json)
+        all_user_ids.update(user_ids)
         
         # Download images
         if 'event' in post_json:
@@ -150,6 +280,24 @@ def download_posts(cookies, headers, start_month=None, end_month=None):
             for url in image_urls:
                 download_image(url, post_dir, cookies, headers)
                 time.sleep(1)  # Rate limiting
+
+    # Save the user mapping
+    save_user_mapping(user_map)
+
+    # Fetch and save user information for all collected user IDs
+    for userid in all_user_ids:
+        try:
+            # If we have a username for this userid, use it
+            username = user_map.get(str(userid))
+            if username:
+                user_xml = fetch_user_info(username, cookies, headers)
+                user_json = xml_to_user_json(user_xml) if user_xml else None
+                save_user_info(user_json, userid)
+                time.sleep(1)  # Rate limiting
+        except Exception as e:
+            print(f"Error fetching user info for userid {userid}: {str(e)}")
+            # Save minimal info for failed fetches
+            save_user_info(None, userid)
 
     return json_posts
 
